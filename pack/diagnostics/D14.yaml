@@ -1,0 +1,36 @@
+id: D14
+name: Leakage
+area: Feature engineering
+tier: core
+points: 5
+gate: true
+question: "Do features use only information that would have been known when the forecast was made?"
+gap_request: "Feature code that builds model inputs."
+signals:
+  negative_shift:
+    polarity: negative
+    owner: D14
+    detectors:
+      - type: code_call
+        file_family: code
+        level: Verified
+        params:
+          name: shift
+          negative_numeric_literal: true
+  python_scanned:
+    polarity: positive
+    owner: D14
+    detectors:
+      - type: code_call
+        file_family: code
+        level: Verified
+        params:
+          parsed: true
+scoring:
+  - {when_all: [negative_shift], score: 25}
+  - {when_all: [python_scanned], score: 90}
+  - {when_all: [negative_shift], cap: 25}
+  - {otherwise: no_evidence}
+insights:
+  negative_shift: "Code calls shift with a negative literal, which can read future actuals."
+  python_scanned: "Python files were scanned and no negative shift was found."

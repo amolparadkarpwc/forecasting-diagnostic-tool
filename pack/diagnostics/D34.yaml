@@ -1,0 +1,23 @@
+id: D34
+name: Naive baseline
+area: Validation & backtesting
+tier: core
+points: 4
+gate: true
+question: "Does the model get compared with a seasonal naive baseline?"
+gap_request: "Benchmark code that includes a seasonal naive forecast."
+signals:
+  seasonal_naive:
+    polarity: positive
+    owner: D34
+    detectors:
+      - type: code_call
+        file_family: code
+        level: Verified
+        params:
+          names: [seasonal_naive, SeasonalNaive]
+scoring:
+  - {when_all: [seasonal_naive], score: 85}
+  - {otherwise: no_evidence}
+insights:
+  seasonal_naive: "Code defines or calls seasonal_naive or SeasonalNaive."

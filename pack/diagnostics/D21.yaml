@@ -1,0 +1,23 @@
+id: D21
+name: Experiment tracking
+area: Model training
+tier: supporting
+points: 2.5
+gate: false
+question: "Are model runs, settings, and results recorded?"
+gap_request: "Training code or configs that record experiments with mlflow or wandb."
+signals:
+  experiment_tracker:
+    polarity: positive
+    owner: D21
+    detectors:
+      - type: code_import
+        file_family: code
+        level: Verified
+        params:
+          modules: [mlflow, wandb]
+scoring:
+  - {when_all: [experiment_tracker], score: 85}
+  - {otherwise: no_evidence}
+insights:
+  experiment_tracker: "Code imports mlflow or wandb."

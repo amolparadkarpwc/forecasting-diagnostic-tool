@@ -1,0 +1,46 @@
+id: D22
+name: Rolling-origin
+area: Validation & backtesting
+tier: core
+points: 3
+gate: false
+question: "Was accuracy tested over many past cut-off dates?"
+gap_request: "Backtest code, a config with backtest.rolling_origin, or a method note that describes rolling origin."
+signals:
+  time_series_split:
+    polarity: positive
+    owner: D22
+    detectors:
+      - type: code_call
+        file_family: code
+        level: Verified
+        params:
+          name: TimeSeriesSplit
+  rolling_origin_config:
+    polarity: positive
+    owner: D22
+    detectors:
+      - type: config_key
+        file_family: config
+        level: Verified
+        params:
+          key: backtest.rolling_origin
+          equals: true
+  rolling_origin_phrase:
+    polarity: positive
+    owner: D22
+    detectors:
+      - type: phrase_search
+        file_family: document
+        level: Attested
+        params:
+          phrases: ["rolling origin"]
+scoring:
+  - {when_all: [time_series_split], score: 90}
+  - {when_all: [rolling_origin_config], score: 90}
+  - {when_all: [rolling_origin_phrase], score: 80}
+  - {otherwise: no_evidence}
+insights:
+  time_series_split: "Code calls TimeSeriesSplit."
+  rolling_origin_config: "Config sets backtest.rolling_origin to true."
+  rolling_origin_phrase: "A document mentions rolling origin."

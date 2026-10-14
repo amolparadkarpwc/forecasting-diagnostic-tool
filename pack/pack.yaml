@@ -1,0 +1,28 @@
+name: forecast-diagnostic-mvp
+version: "0.1.0"
+release_date: "2026-01-15"
+owner: mvp
+gate_floor: 40
+status_green: 67
+status_amber: 50
+verdict_ready: 67
+verdict_gaps: 50
+maturity:
+  - {name: Optimised, min: 85}
+  - {name: Managed, min: 67}
+  - {name: Defined, min: 50}
+  - {name: Developing, min: 25}
+  - {name: Initial, min: 0}
+areas:
+  - Data
+  - Feature engineering
+  - Model training
+  - Validation & backtesting
+  - Deployment & monitoring
+diagnostics:
+  - D08
+  - D14
+  - D21
+  - D22
+  - D34
+  - D41

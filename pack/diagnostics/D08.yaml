@@ -1,0 +1,65 @@
+id: D08
+name: Data profiling
+area: Data
+tier: core
+points: 5
+gate: false
+question: "Is the history structurally sound: unique keys, continuous months, and actuals that are present and non-negative?"
+gap_request: "A sales history CSV with series_id, date, and actual."
+signals:
+  required_columns:
+    polarity: positive
+    owner: D08
+    detectors:
+      - type: data_calc
+        file_family: data
+        level: Verified
+        params:
+          measure: columns_present
+          required_columns: [series_id, date, actual]
+  duplicate_keys:
+    polarity: negative
+    owner: D08
+    detectors:
+      - type: data_calc
+        file_family: data
+        level: Verified
+        params:
+          measure: duplicate_rate
+          key_columns: [series_id, date]
+          op: gt
+          threshold: 0
+  missing_periods:
+    polarity: negative
+    owner: D08
+    detectors:
+      - type: data_calc
+        file_family: data
+        level: Verified
+        params:
+          measure: missing_monthly_pct
+          op: gt
+          threshold: 0
+  bad_actuals:
+    polarity: negative
+    owner: D08
+    detectors:
+      - type: data_calc
+        file_family: data
+        level: Verified
+        params:
+          measure: null_or_negative_pct
+          column: actual
+          op: gt
+          threshold: 0
+scoring:
+  - {when_all: [required_columns], score: 90}
+  - {when_all: [duplicate_keys], cap: 40}
+  - {when_all: [missing_periods], cap: 40}
+  - {when_all: [bad_actuals], cap: 40}
+  - {otherwise: no_evidence}
+insights:
+  duplicate_keys: "Duplicate series and date keys are present."
+  missing_periods: "At least one series is missing a month between its first and last date."
+  bad_actuals: "Some actuals are null or negative."
+  required_columns: "The history has series_id, date, and actual, and the structural checks passed."

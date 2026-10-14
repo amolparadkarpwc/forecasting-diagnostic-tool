@@ -1,0 +1,36 @@
+id: D41
+name: Pipeline reliability
+area: Deployment & monitoring
+tier: core
+points: 4
+gate: false
+question: "Do forecast runs fail visibly instead of swallowing errors?"
+gap_request: "The training or scheduling script that runs the forecast."
+signals:
+  warnings_ignored:
+    polarity: negative
+    owner: D41
+    detectors:
+      - type: code_call
+        file_family: code
+        level: Verified
+        params:
+          name: filterwarnings
+          string_arg: ignore
+  silent_except:
+    polarity: negative
+    owner: D41
+    detectors:
+      - type: code_call
+        file_family: code
+        level: Verified
+        params:
+          bare_except_continue: true
+scoring:
+  - {when_all: [warnings_ignored, silent_except], score: 30}
+  - {when_all: [warnings_ignored], score: 45}
+  - {when_all: [silent_except], score: 45}
+  - {otherwise: no_evidence}
+insights:
+  warnings_ignored: "Warnings are suppressed with filterwarnings ignore."
+  silent_except: "A bare except continues, so a failed fit can disappear."
