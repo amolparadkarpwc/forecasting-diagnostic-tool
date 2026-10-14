@@ -1,0 +1,22 @@
+name: model_file_allowlist
+modules:
+  - builtins
+  - __builtin__
+  - _codecs
+  - collections
+  - copyreg
+  - numpy
+  - pandas
+  - sklearn
+  - scipy
+  - statsmodels
+  - lightgbm
+  - xgboost
+  - prophet
+  - joblib
+  - datetime
+  - types
+  - enum
+  - decimal
+  - math
+  - operator

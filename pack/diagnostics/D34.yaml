@@ -1,23 +1,52 @@
 id: D34
-name: Naive baseline
+name: Naive baseline benchmark
 area: Validation & backtesting
 tier: core
 points: 4
 gate: true
-question: "Does the model get compared with a seasonal naive baseline?"
-gap_request: "Benchmark code that includes a seasonal naive forecast."
+question: "Does the model beat a simple baseline such as repeating last year's value?"
+applies_to: [ml, statistical, intermittent, baseline, unknown]
+data_route:
+  requires: [sales_history, past_forecasts]
+  measures:
+    - name: margin_over_seasonal_naive
+      critical: true
+      curve:
+        - {x: -0.30, y: 5}
+        - {x: -0.05, y: 25}
+        - {x: 0.0, y: 40}
+        - {x: 0.05, y: 70}
+        - {x: 0.15, y: 90}
+        - {x: 0.40, y: 100}
 signals:
-  seasonal_naive:
+  baseline_mentioned:
     polarity: positive
     owner: D34
     detectors:
-      - type: code_call
-        file_family: code
-        level: Verified
+      - type: phrase_search
+        file_family: document
+        level: Attested
         params:
-          names: [seasonal_naive, SeasonalNaive]
+          phrases:
+            - seasonal naive
+            - seasonal naïve
+            - naive baseline
+            - naive benchmark
+          uncertain_context:
+            - fallback
+            - fall-back
+            - backup
+            - back-up
+          uncertain_window: 80
+    review: count_and_flag
 scoring:
-  - {when_all: [seasonal_naive], score: 85}
+  - {when_all: [baseline_mentioned], score: 55}
   - {otherwise: no_evidence}
-insights:
-  seasonal_naive: "Code defines or calls seasonal_naive or SeasonalNaive."
+finding_template: "Margin of model WAPE over seasonal naive is {margin_over_seasonal_naive_num}. Positive means the model is better."
+recommendations:
+  margin_over_seasonal_naive: R-VAL-02
+  baseline_mentioned: R-VAL-02
+gap_request: "A backtest that scores the chosen model and a seasonal naive on the same origins."
+review_checklist:
+  - "Is the naive forecast one of the scored candidates, not only a runtime fallback?"
+version_notes: "0.1.0: MVP computes the WAPE margin over a seasonal naive. A mention that is only a fallback is left for review."

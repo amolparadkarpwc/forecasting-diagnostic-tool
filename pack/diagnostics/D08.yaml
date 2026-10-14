@@ -1,65 +1,54 @@
 id: D08
-name: Data profiling
+name: Data profiling & validation
 area: Data
 tier: core
 points: 5
 gate: false
-question: "Is the history structurally sound: unique keys, continuous months, and actuals that are present and non-negative?"
-gap_request: "A sales history CSV with series_id, date, and actual."
+question: "Is the history structurally sound, with missing periods and duplicate keys visible before a forecast run?"
+applies_to: [ml, statistical, intermittent, baseline, unknown]
+data_route:
+  requires: [sales_history]
+  measures:
+    - name: missing_period_rate
+      critical: true
+      curve:
+        - {x: 0.0, y: 100}
+        - {x: 0.02, y: 85}
+        - {x: 0.08, y: 60}
+        - {x: 0.20, y: 30}
+        - {x: 0.50, y: 10}
+        - {x: 1.0, y: 0}
+    - name: duplicate_rate
+      critical: true
+      curve:
+        - {x: 0.0, y: 100}
+        - {x: 0.01, y: 70}
+        - {x: 0.05, y: 40}
+        - {x: 0.20, y: 15}
+        - {x: 1.0, y: 0}
 signals:
-  required_columns:
+  validation_described:
     polarity: positive
     owner: D08
     detectors:
-      - type: data_calc
-        file_family: data
-        level: Verified
+      - type: phrase_search
+        file_family: document
+        level: Attested
         params:
-          measure: columns_present
-          required_columns: [series_id, date, actual]
-  duplicate_keys:
-    polarity: negative
-    owner: D08
-    detectors:
-      - type: data_calc
-        file_family: data
-        level: Verified
-        params:
-          measure: duplicate_rate
-          key_columns: [series_id, date]
-          op: gt
-          threshold: 0
-  missing_periods:
-    polarity: negative
-    owner: D08
-    detectors:
-      - type: data_calc
-        file_family: data
-        level: Verified
-        params:
-          measure: missing_monthly_pct
-          op: gt
-          threshold: 0
-  bad_actuals:
-    polarity: negative
-    owner: D08
-    detectors:
-      - type: data_calc
-        file_family: data
-        level: Verified
-        params:
-          measure: null_or_negative_pct
-          column: actual
-          op: gt
-          threshold: 0
+          phrases:
+            - validation checks
+            - data quality
+            - missing periods
+    review: none
 scoring:
-  - {when_all: [required_columns], score: 90}
-  - {when_all: [duplicate_keys], cap: 40}
-  - {when_all: [missing_periods], cap: 40}
-  - {when_all: [bad_actuals], cap: 40}
+  - {when_all: [validation_described], score: 55}
   - {otherwise: no_evidence}
-insights:
-  duplicate_keys: "Duplicate series and date keys are present."
-  missing_periods: "At least one series is missing a month between its first and last date."
-  bad_actuals: "Some actuals are null or negative."
-  required_columns: "The history has series_id, date, and actual, and the structural checks passed."
+finding_template: "Missing periods are {missing_period_rate_pct} of the expected history and duplicate keys are {duplicate_rate_pct} of rows."
+recommendations:
+  missing_period_rate: R-DATA-01
+  duplicate_rate: R-DATA-01
+  validation_described: R-DATA-01
+gap_request: "A sales history extract with series id, date, and actual, plus any data-quality checks that run before forecasting."
+review_checklist:
+  - "Are missing periods and duplicates blocked before training?"
+version_notes: "0.1.0: MVP scores missing periods and duplicate keys from sales_history."

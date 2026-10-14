@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvidenceRecord",
+  "type": "object",
+  "required": ["record_id", "diagnostic_id", "signal_id", "source", "handler", "block", "fact", "values", "evidence_level", "match_strength", "status", "owner_diagnostic", "model_ref", "review", "pack_version"],
+  "properties": {
+    "evidence_level": {"enum": ["Verified", "Inferred", "Attested"]},
+    "match_strength": {"enum": ["exact", "pattern", "keyword", "derived"]},
+    "status": {"enum": ["auto_accepted", "counted_flagged", "needs_review", "confirmed", "rejected", "resolved"]}
+  }
+}

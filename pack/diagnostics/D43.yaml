@@ -1,0 +1,31 @@
+id: D43
+name: Target definition
+area: Data
+tier: core
+points: 6
+gate: true
+question: "Does the history the model learns from reflect true demand, including stockouts, returns, and cancellations?"
+applies_to: [ml, statistical, intermittent, baseline, unknown]
+signals:
+  stockout_handling:
+    polarity: positive
+    owner: D43
+    detectors:
+      - type: phrase_search
+        file_family: document
+        level: Attested
+        params:
+          phrases:
+            - lost sales
+            - stockout
+            - stock-out
+    review: block
+scoring:
+  - {when_all: [stockout_handling], score: 60}
+  - {otherwise: no_evidence}
+recommendations:
+  stockout_handling: R-DATA-02
+gap_request: "The demand definition, including how stockouts, returns, and cancellations are treated, plus any stockout flags."
+review_checklist:
+  - "Has a practitioner confirmed that lost sales are corrected, not only mentioned?"
+version_notes: "0.1.0: stub. A mention is left for review and does not score on its own."

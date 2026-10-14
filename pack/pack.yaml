@@ -1,28 +1,41 @@
 name: forecast-diagnostic-mvp
-version: "0.1.0"
-release_date: "2026-01-15"
+version: 0.1.0
+release_date: "2026-10-14"
 owner: mvp
-gate_floor: 40
-status_green: 67
-status_amber: 50
-verdict_ready: 67
-verdict_gaps: 50
-maturity:
-  - {name: Optimised, min: 85}
-  - {name: Managed, min: 67}
-  - {name: Defined, min: 50}
-  - {name: Developing, min: 25}
-  - {name: Initial, min: 0}
-areas:
-  - Data
-  - Feature engineering
-  - Model training
-  - Validation & backtesting
-  - Deployment & monitoring
+vocabularies:
+  - metrics
+  - model_file_allowlist
 diagnostics:
   - D08
+  - D43
   - D14
-  - D21
-  - D22
+  - D23
   - D34
   - D41
+  - D42
+gate_floor: 40
+readiness_cutoff: 0.5
+attested_cap: off
+verdict_bands:
+  ready: 67
+  ready_with_gaps: 50
+maturity_bands:
+  - {name: Initial, min: 0, max: 24}
+  - {name: Developing, min: 25, max: 49}
+  - {name: Defined, min: 50, max: 66}
+  - {name: Managed, min: 67, max: 84}
+  - {name: Optimised, min: 85, max: 100}
+area_weights:
+  Data: 25
+  Feature engineering: 25
+  Model training: 15
+  Validation & backtesting: 20
+  Deployment & monitoring: 15
+status_bands:
+  red_below: 50
+  amber_below: 67
+gates:
+  - D14
+  - D34
+  - D43
+version_notes: "0.1.0: MVP subset. Thresholds are placeholders until the SME workshop."

@@ -1,0 +1,8 @@
+name: metrics
+terms:
+  - WAPE
+  - MAPE
+  - RMSE
+  - MAE
+  - bias
+  - weighted absolute percentage error

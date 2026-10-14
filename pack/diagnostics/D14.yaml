@@ -1,11 +1,11 @@
 id: D14
-name: Leakage
+name: Leakage / point-in-time
 area: Feature engineering
 tier: core
 points: 5
 gate: true
 question: "Do features use only information that would have been known when the forecast was made?"
-gap_request: "Feature code that builds model inputs."
+applies_to: [ml, statistical, intermittent, baseline, unknown]
 signals:
   negative_shift:
     polarity: negative
@@ -15,9 +15,11 @@ signals:
         file_family: code
         level: Verified
         params:
-          name: shift
-          negative_numeric_literal: true
-  python_scanned:
+          names: ["shift"]
+          arg_condition: negative_literal
+          role: feature
+    review: count_and_flag
+  possible_label_shift:
     polarity: positive
     owner: D14
     detectors:
@@ -25,12 +27,28 @@ signals:
         file_family: code
         level: Verified
         params:
-          parsed: true
+          names: ["shift"]
+          arg_condition: negative_literal
+          role: possible_label
+    review: block
+  future_dated_join:
+    polarity: negative
+    owner: D14
+    detectors:
+      - type: sql_pattern
+        file_family: code
+        level: Verified
+        params:
+          pattern: '(?i)join\s+(?P<table>[A-Za-z_][\w.]*)(?:\s+[A-Za-z_]\w*)?\s+on\b[^\n;]*>='
+    review: count_and_flag
 scoring:
-  - {when_all: [negative_shift], score: 25}
-  - {when_all: [python_scanned], score: 90}
-  - {when_all: [negative_shift], cap: 25}
+  - {when_any: [negative_shift, future_dated_join], score: 20}
   - {otherwise: no_evidence}
-insights:
-  negative_shift: "Code calls shift with a negative literal, which can read future actuals."
-  python_scanned: "Python files were scanned and no negative shift was found."
+finding_template: "Point-in-time check failed. {fact}"
+recommendations:
+  negative_shift: R-FE-01
+  future_dated_join: R-FE-01
+gap_request: "The feature-build code or SQL, with the as-of rule used for every training row."
+review_checklist:
+  - "Is a negative shift building a label that is filtered to the target date, rather than a feature?"
+version_notes: "0.1.0: negative shift used as a feature is flagged; a shift assigned to a target or label is left for review."

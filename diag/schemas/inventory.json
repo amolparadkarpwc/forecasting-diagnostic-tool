@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InventoryRecord",
+  "type": "object",
+  "required": ["artifact_id", "path", "sha256", "size_bytes", "detected_type", "family", "encoding", "period_covered", "status", "reason", "version_group"],
+  "properties": {
+    "artifact_id": {"type": "string"},
+    "path": {"type": "string"},
+    "sha256": {"type": "string"},
+    "size_bytes": {"type": "integer"},
+    "detected_type": {"type": "string"},
+    "family": {"type": "string", "enum": ["document", "code", "config", "log", "model", "data", "none"]},
+    "encoding": {"type": "string"},
+    "period_covered": {"type": "string"},
+    "status": {"type": "string", "enum": ["readable", "unreadable", "duplicate", "needs_version_choice", "quarantined", "manual_review"]},
+    "reason": {"type": "string"},
+    "version_group": {"type": "string"}
+  }
+}

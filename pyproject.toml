@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forecast-diagnostic"
+version = "0.1.0"
+description = "MVP forecasting data and model diagnostic tool"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pandas==2.3.3",
+  "PyYAML==6.0.3",
+  "python-docx==1.2.0",
+]
+
+[project.scripts]
+diag = "diag.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["diag*"]
+
+[tool.setuptools.package-data]
+diag = ["schemas/*.json", "templates/*.html"]

@@ -4,33 +4,67 @@ area: Deployment & monitoring
 tier: core
 points: 4
 gate: false
-question: "Do forecast runs fail visibly instead of swallowing errors?"
-gap_request: "The training or scheduling script that runs the forecast."
+question: "Do forecast runs succeed on schedule, and are failures raised instead of swallowed?"
+applies_to: [ml, statistical, intermittent, baseline, unknown]
 signals:
-  warnings_ignored:
+  high_failure_rate:
     polarity: negative
     owner: D41
     detectors:
-      - type: code_call
-        file_family: code
+      - type: log_stats
+        file_family: log
         level: Verified
         params:
-          name: filterwarnings
-          string_arg: ignore
+          metric: failure_rate
+          compare: gte
+          threshold: 0.2
+          min_events: 1
+    review: none
   silent_except:
     polarity: negative
     owner: D41
     detectors:
+      - type: fact_pattern
+        file_family: code
+        level: Verified
+        params:
+          pattern: '(?m)^[ \t]*except\b[^\n]*:\s*(?:(?:continue|pass)\b|\n[ \t]*(?:continue|pass)\b)'
+    review: count_and_flag
+  filterwarnings_ignore:
+    polarity: negative
+    owner: D41
+    detectors:
       - type: code_call
         file_family: code
         level: Verified
         params:
-          bare_except_continue: true
+          names: ["filterwarnings"]
+          arg_condition: contains_ignore
+    review: count_and_flag
+  scheduled_success:
+    polarity: positive
+    owner: D41
+    detectors:
+      - type: log_stats
+        file_family: log
+        level: Verified
+        params:
+          metric: failure_rate
+          compare: lte
+          threshold: 0.05
+          min_events: 3
+    review: none
 scoring:
-  - {when_all: [warnings_ignored, silent_except], score: 30}
-  - {when_all: [warnings_ignored], score: 45}
-  - {when_all: [silent_except], score: 45}
+  - {when_any: [high_failure_rate, silent_except, filterwarnings_ignore], score: 30}
+  - {when_all: [scheduled_success], score: 85}
   - {otherwise: no_evidence}
-insights:
-  warnings_ignored: "Warnings are suppressed with filterwarnings ignore."
-  silent_except: "A bare except continues, so a failed fit can disappear."
+finding_template: "Scheduled runs are unreliable (failure rate {failure_rate_pct}). {fact}"
+recommendations:
+  high_failure_rate: R-DEP-01
+  silent_except: R-DEP-01
+  filterwarnings_ignore: R-DEP-01
+  scheduled_success: R-DEP-01
+gap_request: "The scheduler log for recent forecast runs, and the exception handling around model fit."
+review_checklist:
+  - "Is there a tested fallback when a run fails, and does someone get alerted?"
+version_notes: "0.1.0: MVP uses log failure rate plus silent except and filterwarnings('ignore')."

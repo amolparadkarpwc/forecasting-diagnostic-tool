@@ -1,63 +1,73 @@
-# Forecasting diagnostic tool (MVP)
+# Forecasting data and model diagnostic (MVP)
 
-A deterministic, offline check of forecasting artifacts. It inventories files, parses them without running them, applies a small YAML knowledge pack, and writes a single HTML dashboard.
+A deterministic diagnostic for a forecasting solution a client already runs. It reads the files they share, records evidence, scores a small knowledge pack, and writes a single-file HTML dashboard.
 
-## Setup and the path to a dashboard
+This is a fixed-deadline slice of the full build spec, not the 10-week product. There is no LLM and no network call at runtime. Client Python is parsed, never executed. Model files are scanned with `pickletools` and never unpickled.
 
-From this directory, on Python 3.11+:
+## Run the demo
 
-```
-python -m pip install -r requirements.txt
-python -m diag demo leaky
-```
+From the repository root, on Windows:
 
-That copies `tests/planted/leaky_forecast` into `demo/input`, then runs init, run, and report. Open `demo/output/dashboard.html`.
-
-The same steps one command at a time:
-
-```
-python -m pip install -r requirements.txt
-python -m diag init demo
-python -m diag run demo --pack pack
-python -m diag report demo
-python -m pytest
+```powershell
+python -m diag --help
+python -m diag init engagements\demo
+Copy-Item -Recurse -Force examples\demo_input\* engagements\demo\input\
+python -m diag run engagements\demo --pack pack
+python -m diag finalise engagements\demo
+python -m diag report engagements\demo
+start engagements\demo\output\dashboard.html
 ```
 
-`diag demo leaky` is what fills `demo/input` with the planted leaky scenario before scoring. `init` / `run` / `report` on an empty `demo/input` still complete; they just have nothing to score.
+`python -m diag` works without an install. Optional: `pip install -e .` then use the `diag` command.
 
-The assessed date is frozen in `engagement.yaml` (`2026-01-15`) so two runs write identical `output/results.json`.
+Rebuild the planted demo files with `python examples\build_demo_input.py`.
 
-## What a run writes
+Tests:
 
-Inside the engagement `output/` folder:
+```powershell
+python -m unittest tests.test_mvp -v
+```
 
-- `inventory.json` and `inventory.csv`
+## What the demo is meant to show
+
+The sample engagement mixes sound and weak artifacts:
+
+- Sales history with missing months and one duplicate key
+- A forecast archive that can be scored for WAPE, bias, and a seasonal-naive margin
+- Python that shifts a feature forward and swallows fit errors, plus a SQL join on a future date
+- A scheduler log with failed runs
+- A config and a short methodology note that name WAPE, bias, and a seasonal naive baseline
+- A pickle that references an OS module (quarantined), a placeholder ONNX file, a fake PDF, a broken Python file, and a broken JSON file
+- A zip with one safe member, and a duplicate text file
+
+One bad file does not stop the run. `AcmeForecast` and `Jane Doe` are on the masking list created by `diag init`, and those strings are replaced with `[REDACTED]` in outputs.
+
+Gates are D14, D34, and D43. On the planted demo the verdict is **Not ready** (about 41, Developing): D08 amber from missing months and a duplicate key, D14 red because of a forward shift and a future-dated join, D23 and D34 green from WAPE and a seasonal-naive margin, D41 red from failed runs and swallowed exceptions, and D43 with no evidence. Thresholds in `pack/` are placeholders.
+
+## Layout
+
+- `diag/` engine: CLI, intake, handlers, blocks, rules, scoring, outputs
+- `pack/` knowledge pack (YAML)
+- `examples/demo_input/` planted engagement
+- `tests/` planted scenarios and end-to-end checks
+
+Useful outputs, written under the engagement `output/` folder:
+
+- `inventory.csv` and `inventory.json`
 - `evidence_log.json`
-- `results.json`
-- `dashboard.html` (inline CSS, no CDN, no network)
+- `results.json` (pack, engine, and Python versions)
+- `dashboard.html` (Summary, Scorecard, Recommendations)
 
-`.pkl`, `.joblib`, and `.onnx` files are hashed, marked quarantined, and never unpickled or loaded. A file that cannot be decoded or parsed is marked unreadable and the rest of the run continues. Zip members whose paths escape the folder are refused.
+`diag run` writes a provisional results file. `diag finalise` rewrites it as final. Review sign-off is still empty. `diag report` only renders the dashboard.
 
-Masking terms in the engagement config are replaced with `[masked]` in inventory, evidence, results, and the dashboard.
+## Deferred versus the full spec
 
-## Pack
+- The other diagnostics beyond D08, D14, D23, D34, D41, D42, and D43
+- Review-sheet export and import (uncertain matches are left as `needs_review` and are not scored)
+- Unpickling allowlisted models, ONNX inspection, PDF, Excel, and Parquet
+- Incremental re-runs, targeted-request ranking beyond the gap list, what-if editing, and a separate coverage tab
+- Family-specific scoring branches (a family is detected and stored, and every included diagnostic stays applicable)
+- Practitioner sign-off and knowledge-pack feedback
+- Overall score is the points-weighted average of the diagnostics **in this pack**. Missing evidence counts as zero. It is not divided by the full 100-point catalogue
 
-Thresholds and scores live in `pack/diagnostics/`. The engine refuses an entry that is missing `id`, `signals`, or `scoring`. This MVP ships six diagnostics:
-
-| ID | Check | Gate |
-| --- | --- | --- |
-| D08 | Data profiling on `series_id`, `date`, `actual` | |
-| D14 | Leakage via a negative `shift` literal, including `periods=` | Yes |
-| D21 | Experiment tracking (`mlflow` or `wandb` import) | |
-| D22 | Rolling-origin (`TimeSeriesSplit`, config, or a document phrase) | |
-| D34 | Naive baseline (`seasonal_naive` or `SeasonalNaive`) | Yes |
-| D41 | Pipeline reliability (`filterwarnings("ignore")`, bare `except: continue`) | |
-
-No evidence leaves the score null and the status `No evidence`. It does not become 0, and a null gate score does not force Not ready. Green is 67 and above, Amber is 50–66, and Red is below 50. D14 or D34 forces Not ready only when its numeric score is below 40.
-
-## Left out of the full spec
-
-- Only these six diagnostics. The other diagnostics are not implemented and have no pack files.
-- No model execution. Model files are quarantined.
-- No PDF, Word, PowerPoint, Excel, Parquet, or notebook parsers.
-- No review spreadsheet, recommendation library, or network calls. There is no LLM.
+`needs_review` is used when a negative `shift` looks like a label, and when a seasonal naive is mentioned only as a fallback. Those records do not change the score until a practitioner confirms them.

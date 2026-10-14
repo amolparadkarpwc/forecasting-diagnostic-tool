@@ -1,0 +1,16 @@
+id: D42
+name: Root cause attribution
+area: Deployment & monitoring
+tier: synthesis
+points: 0
+gate: false
+synthesis: true
+question: "Which root cause — data, inputs, model, or process — best explains the weak diagnostics?"
+signals: {}
+scoring:
+  - {otherwise: no_evidence}
+recommendations: {}
+gap_request: ""
+review_checklist:
+  - "Do the grouped causes match what a practitioner would tell the client?"
+version_notes: "0.1.0: synthesis only. D42 is not scored."

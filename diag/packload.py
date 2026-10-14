@@ -1,94 +1,93 @@
-"""Load and validate a knowledge pack."""
+"""Load and validate the knowledge pack."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import yaml
 
-DETECTOR_TYPES = {
-    "code_import",
-    "code_call",
-    "config_key",
-    "phrase_search",
-    "data_calc",
-    "log_stats",
-}
+from diag.blocks import BLOCKS
+from diag.rules.ownership import validate_ownership
+from diag.rules.review import POLICIES
+
+REQUIRED = ["id", "name", "area", "tier", "points", "gate", "question"]
 
 
-class PackError(ValueError):
-    """The knowledge pack is missing required fields or is otherwise invalid."""
-
-
-def load_pack(pack_dir: Path) -> dict[str, Any]:
-    """Load ``pack.yaml`` and the diagnostic entries it lists."""
-    pack_dir = pack_dir.resolve()
-    manifest_path = pack_dir / "pack.yaml"
-    if not manifest_path.is_file():
-        raise PackError(f"pack manifest not found: {manifest_path}")
-    manifest = _read_yaml(manifest_path)
-    if not isinstance(manifest, dict):
-        raise PackError("pack.yaml must be a mapping")
-    version = manifest.get("version")
-    if not version:
-        raise PackError("pack.yaml missing version")
-    names = manifest.get("diagnostics")
-    if not isinstance(names, list) or not names:
-        raise PackError("pack.yaml missing diagnostics")
-    entries: list[dict[str, Any]] = []
-    for name in names:
-        path = pack_dir / "diagnostics" / f"{name}.yaml"
-        if not path.is_file():
-            raise PackError(f"diagnostic file not found: {path}")
-        entry = _read_yaml(path)
-        validate_entry(entry, path)
-        if entry["id"] != name:
-            raise PackError(f"{path} id is {entry['id']!r}, expected {name!r}")
-        entries.append(entry)
-    entries.sort(key=lambda item: item["id"])
-    return {"manifest": manifest, "entries": entries, "version": str(version)}
-
-
-def validate_entry(entry: Any, path: Path | None = None) -> None:
-    """Refuse a diagnostic entry missing id, signals, or scoring."""
-    label = str(path) if path is not None else "diagnostic entry"
-    if not isinstance(entry, dict):
-        raise PackError(f"{label} must be a mapping")
-    for key in ("id", "signals", "scoring"):
-        if key not in entry or entry[key] in (None, "", [], {}):
-            raise PackError(f"{label} missing {key}")
-    if not isinstance(entry["signals"], dict):
-        raise PackError(f"{label} signals must be a mapping")
-    if not isinstance(entry["scoring"], list):
-        raise PackError(f"{label} scoring must be a list")
-    for signal_id, signal in entry["signals"].items():
-        if not isinstance(signal, dict):
-            raise PackError(f"{label} signal {signal_id} must be a mapping")
-        detectors = signal.get("detectors")
-        if not isinstance(detectors, list) or not detectors:
-            raise PackError(f"{label} signal {signal_id} missing detectors")
-        for detector in detectors:
-            if not isinstance(detector, dict) or "type" not in detector:
-                raise PackError(f"{label} signal {signal_id} has a detector without type")
-            if detector["type"] not in DETECTOR_TYPES:
-                raise PackError(
-                    f"{label} signal {signal_id} uses unknown detector {detector['type']!r}"
-                )
-    for rule in entry["scoring"]:
-        if not isinstance(rule, dict):
-            raise PackError(f"{label} has a scoring rule that is not a mapping")
-        if "otherwise" in rule:
-            continue
-        if "when_all" not in rule or not isinstance(rule["when_all"], list):
-            raise PackError(f"{label} scoring rule missing when_all")
-        if "score" not in rule and "cap" not in rule:
-            raise PackError(f"{label} scoring rule needs score or cap")
-
-
-def _read_yaml(path: Path) -> Any:
-    try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise PackError(f"invalid YAML in {path}: {exc.__class__.__name__}") from exc
+def _load_yaml(path: Path) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"missing knowledge pack file: {path}")
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{path.name} must be a mapping")
     return loaded
+
+
+def load_pack(path: str | Path) -> dict:
+    root = Path(path)
+    if root.is_file():
+        root = root.parent
+    meta = _load_yaml(root / "pack.yaml")
+    for field in ("name", "version", "diagnostics", "gate_floor", "maturity_bands", "area_weights", "gates"):
+        if field not in meta:
+            raise ValueError(f"pack.yaml missing {field}")
+    vocab = {}
+    for name in meta.get("vocabularies") or []:
+        vocab[name] = _load_yaml(root / "vocab" / f"{name}.yaml")
+    diagnostics = []
+    known_ids = set()
+    for diag_id in meta["diagnostics"]:
+        entry = _load_yaml(root / "diagnostics" / f"{diag_id}.yaml")
+        if entry.get("id") != diag_id:
+            raise ValueError(f"{diag_id}.yaml id does not match the file name")
+        missing = [field for field in REQUIRED if field not in entry]
+        if missing:
+            raise ValueError(f"{diag_id} missing {', '.join(missing)}")
+        _validate_entry(entry, vocab)
+        diagnostics.append(entry)
+        known_ids.add(diag_id)
+    for gate in meta.get("gates") or []:
+        if gate not in known_ids:
+            raise ValueError(f"gate {gate} is not in this pack")
+    validate_ownership(diagnostics)
+    library = _load_yaml(root / "library" / "recommendations.yaml")
+    recommendations = library.get("recommendations") or []
+    known_recs = {item.get("id") for item in recommendations}
+    for entry in diagnostics:
+        for signal_id, recommendation in (entry.get("recommendations") or {}).items():
+            if recommendation not in known_recs:
+                raise ValueError(f"{entry['id']}.{signal_id} references unknown recommendation {recommendation}")
+    return {
+        "meta": meta,
+        "vocab": vocab,
+        "diagnostics": diagnostics,
+        "recommendations": recommendations,
+        "root": str(root),
+    }
+
+
+def _validate_entry(entry: dict, vocab: dict) -> None:
+    for signal_id, signal in (entry.get("signals") or {}).items():
+        if not isinstance(signal, dict):
+            raise ValueError(f"{entry['id']}.{signal_id} must be a mapping")
+        policy = signal.get("review") or "none"
+        if policy not in POLICIES:
+            raise ValueError(f"{entry['id']}.{signal_id} has unknown review policy {policy}")
+        for detector in signal.get("detectors") or []:
+            block = detector.get("type")
+            if block not in BLOCKS and block != "data_calc":
+                raise ValueError(f"{entry['id']}.{signal_id} uses unknown block {block}")
+            if detector.get("file_family") == "document" and detector.get("level") != "Attested":
+                raise ValueError(f"{entry['id']}.{signal_id} document detector must be Attested")
+            _check_refs(detector.get("params") or {}, vocab, f"{entry['id']}.{signal_id}")
+
+
+def _check_refs(value, vocab: dict, label: str) -> None:
+    if isinstance(value, str) and value.startswith("@"):
+        if value[1:] not in vocab:
+            raise ValueError(f"{label} references unknown vocabulary {value}")
+    elif isinstance(value, list):
+        for item in value:
+            _check_refs(item, vocab, label)
+    elif isinstance(value, dict):
+        for item in value.values():
+            _check_refs(item, vocab, label)

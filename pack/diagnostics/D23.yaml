@@ -1,0 +1,63 @@
+id: D23
+name: Accuracy metrics
+area: Validation & backtesting
+tier: core
+points: 3
+gate: false
+question: "Is forecast error measured with a standard metric at the horizons the business uses?"
+applies_to: [ml, statistical, intermittent, baseline, unknown]
+data_route:
+  requires: [sales_history, past_forecasts]
+  measures:
+    - name: wape
+      critical: true
+      curve:
+        - {x: 0.0, y: 100}
+        - {x: 0.10, y: 85}
+        - {x: 0.20, y: 70}
+        - {x: 0.35, y: 45}
+        - {x: 0.50, y: 25}
+        - {x: 1.0, y: 0}
+    - name: abs_bias
+      critical: false
+      curve:
+        - {x: 0.0, y: 100}
+        - {x: 0.05, y: 80}
+        - {x: 0.15, y: 55}
+        - {x: 0.30, y: 30}
+        - {x: 1.0, y: 0}
+signals:
+  metrics_in_config:
+    polarity: positive
+    owner: D23
+    detectors:
+      - type: config_key
+        file_family: config
+        level: Verified
+        params:
+          key_globs: ["metrics.*", "accuracy.*", "backtest.metric*"]
+          value_terms: ["@metrics"]
+    review: none
+  metrics_in_docs:
+    polarity: positive
+    owner: D23
+    detectors:
+      - type: phrase_search
+        file_family: document
+        level: Attested
+        params:
+          phrases: ["@metrics"]
+    review: none
+scoring:
+  - {when_any: [metrics_in_config, metrics_in_docs], score: 60}
+  - {otherwise: no_evidence}
+finding_template: "WAPE is {wape_pct} and absolute bias is {abs_bias_pct}."
+recommendations:
+  wape: R-VAL-01
+  abs_bias: R-VAL-01
+  metrics_in_config: R-VAL-01
+  metrics_in_docs: R-VAL-01
+gap_request: "Past forecasts (series, run date, target date, forecast) joined to actuals, or a metric definition from the config."
+review_checklist:
+  - "Is the reported metric the one the business uses to judge the forecast?"
+version_notes: "0.1.0: MVP computes WAPE and absolute bias when history and a forecast archive are both present."

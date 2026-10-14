@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Results",
+  "type": "object",
+  "required": ["engagement", "versions", "artifacts_shared", "artifacts_not_shared", "diagnostics", "areas", "overall", "coverage", "measured_view", "targeted_request", "root_causes", "actions", "sign_off"]
+}

@@ -1,0 +1,37 @@
+recommendations:
+  - id: R-DATA-01
+    text: "Add a pre-forecast validation check that fails the run when periods are missing or duplicate keys exist."
+    effort: M
+    root_cause: data
+    targets:
+      D08: 75
+  - id: R-DATA-02
+    text: "Define the demand target, including how stockouts, returns, and cancellations are treated, and keep that rule with the training data."
+    effort: M
+    root_cause: data
+    targets:
+      D43: 70
+  - id: R-FE-01
+    text: "Rebuild features with a strict as-of cutoff so no future actuals or realised prices enter the training row."
+    effort: H
+    root_cause: inputs
+    targets:
+      D14: 75
+  - id: R-VAL-01
+    text: "Publish WAPE and bias by horizon on every backtest, computed from the forecast archive and actuals."
+    effort: M
+    root_cause: model
+    targets:
+      D23: 80
+  - id: R-VAL-02
+    text: "Score the model against a seasonal naive baseline on the same origins and keep the comparison in the model selection log."
+    effort: M
+    root_cause: model
+    targets:
+      D34: 75
+  - id: R-DEP-01
+    text: "Replace silent exception handlers with logged failures and an alert when the scheduled forecast run fails."
+    effort: M
+    root_cause: process
+    targets:
+      D41: 75
