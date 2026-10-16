@@ -5,90 +5,846 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
-  :root {
-    --ink: #1c2430;
-    --muted: #5c6778;
-    --line: #d9e0ea;
-    --bg: #f4f7fb;
-    --card: #ffffff;
-    --navy: #0b3a5b;
-    --green: #1f7a4d;
-    --green-bg: #e5f6ec;
-    --amber: #8a5a00;
-    --amber-bg: #fff4d6;
-    --red: #a12622;
-    --red-bg: #fde8e6;
-    --grey: #5c6570;
-    --grey-bg: #eef1f4;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
-  header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-end; background: var(--navy); color: white; padding: 28px 32px 20px; }
-  header h1 { margin: 0; font-size: 28px; }
-  .eyebrow { margin: 0 0 4px; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; opacity: .8; }
-  .sub, .meta, .reason, .coverage { color: var(--muted); }
-  header .sub { color: rgba(255,255,255,.8); margin: 6px 0 0; }
-  button { font: inherit; }
-  #measured-toggle, .tab { border: 1px solid transparent; border-radius: 999px; padding: 8px 14px; cursor: pointer; }
-  #measured-toggle { background: white; color: var(--navy); }
-  .tabs { display: flex; gap: 8px; padding: 16px 32px 0; }
-  .tab { background: transparent; color: var(--navy); }
-  .tab.active { background: var(--navy); color: white; }
-  .panel { display: none; padding: 20px 32px 48px; }
-  .panel.active { display: block; }
-  .verdict { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px 24px; }
-  .verdict h2 { margin: 0; font-size: 36px; }
-  .bigscore { font-size: 28px; font-weight: 700; margin: 8px 0; }
-  .scale { display: flex; justify-content: space-between; gap: 8px; margin: 16px 0; padding: 10px 12px; background: white; border-radius: 10px; font-size: 13px; color: var(--muted); }
-  .ready-line { color: var(--green); font-weight: 700; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
-  .card, .detail { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
-  .card h3, .detail h3 { margin: 0 0 8px; font-size: 16px; }
-  .findings { list-style: none; padding: 0; }
-  .findings li { background: white; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
-  table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { background: #e7eef6; font-size: 13px; }
-  .pill { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
-  .pill.green { color: var(--green); background: var(--green-bg); }
-  .pill.amber { color: var(--amber); background: var(--amber-bg); }
-  .pill.red { color: var(--red); background: var(--red-bg); }
-  .pill.grey { color: var(--grey); background: var(--grey-bg); }
-  .actions { padding-left: 18px; }
-  .actions li, .detail { margin: 12px 0; }
-  footer { padding: 8px 32px 28px; color: var(--muted); font-size: 13px; }
+:root{
+  --bg:#F3F4F2; --paper:#FFFFFF; --ink:#1B2733; --muted:#5B6873; --rule:#D9DDD8; --soft:#ECEEEB;
+  --gap:#B4432F; --minor:#D98E2B; --ready:#2E7D5B; --na:#A9B0B6; --proj:#3A5BA0; --projsoft:#E4E9F4;
+  --ans:#7A5BA6;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.45;font-variant-numeric:tabular-nums}
+.wrap{max-width:1200px;margin:0 auto;padding:20px 24px 40px}
+h1{font-size:21px;font-weight:600;margin:0;letter-spacing:-0.01em}
+h2{font-size:15px;font-weight:600;margin:0}
+h3{font-size:14px;font-weight:600;margin:0}
+p.sub{color:var(--muted);font-size:13px;margin:2px 0 10px}
+button,input,select{font:inherit}
+:focus-visible{outline:2px solid var(--proj);outline-offset:2px}
+[hidden]{display:none!important}
+
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.top > div{min-width:0}
+.meta{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:6px;font-size:13px}
+.meta em{font-style:normal;color:var(--muted);margin-right:6px}
+.chip{display:inline-block;padding:0 8px;border-radius:999px;font-size:12px;border:1px solid var(--rule);background:var(--paper);margin-right:4px;line-height:20px}
+.chip.off{color:var(--muted);border-style:dashed;background:transparent}
+.badge{display:inline-block;padding:1px 10px;border-radius:999px;font-size:12px;font-weight:600;line-height:20px}
+.badge.final{background:var(--ink);color:#fff}
+.badge.prov{background:#FFF1D6;color:#7A4E07;border:1px solid #E7C27A}
+.actions{display:flex;gap:8px;align-items:center;flex:none}
+.btn{font-size:13px;padding:7px 12px;border-radius:6px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
+.btn.ghost{background:var(--paper);color:var(--ink);border-color:var(--rule)}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden;background:var(--paper)}
+.seg button{border:none;background:none;padding:6px 10px;font-size:12.5px;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+
+.tabs{display:flex;gap:26px;border-bottom:1px solid var(--rule);margin:14px 0 16px}
+.tabs button{background:none;border:none;border-bottom:2px solid transparent;padding:8px 0 9px;margin-bottom:-1px;color:var(--muted);cursor:pointer;font-size:14px}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
+
+.panel{background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:14px 16px}
+.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+
+.hero{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.15fr);gap:14px;align-items:stretch}
+.scorebig{font-size:64px;font-weight:600;line-height:1;letter-spacing:-0.02em}
+.scorebig small{font-size:20px;font-weight:400;color:var(--muted);margin-left:4px}
+.verdict{display:inline-block;margin:12px 0 4px;padding:3px 12px;border-radius:999px;font-weight:600;font-size:14px}
+.v-ready{background:#E3F1EA;color:#1D5A40}.v-gaps{background:#FCEFD9;color:#7A4E07}.v-not{background:#F7E1DC;color:#8A2F20}
+.vwhy{font-size:13px;color:var(--muted);margin:2px 0 14px;max-width:52ch}
+.split{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--soft);margin:6px 0 6px}
+.split span{display:block;height:100%}
+.sp-ev{background:var(--ink)} .sp-ans{background:var(--ans)} .sp-lost{background:#D3D7DB} .sp-ne{background:repeating-linear-gradient(135deg,#C2C7CC 0 2px,var(--paper) 2px 5px)}
+.splitkey{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted)}
+.splitkey i{width:10px;height:10px;display:inline-block;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.radarwrap{display:flex;flex-direction:column;align-items:center}
+.mhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.mlevel{font-size:30px;font-weight:600;line-height:1.15;letter-spacing:-0.01em}
+.mlevel small{font-size:15px;font-weight:400;color:var(--muted);margin-left:8px}
+.scale{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:30px 0 6px;position:relative}
+.seg5{border-radius:6px;padding:8px 10px;min-height:58px;border:2px solid transparent}
+.seg5 .n{font-size:12px;color:var(--muted)} .seg5 .t{font-weight:600;font-size:14px} .seg5 .rg{font-size:12px;color:var(--muted)}
+.seg5.r{background:#F7E1DC} .seg5.a{background:#FCEFD9} .seg5.g{background:#E3F1EA}
+.seg5.cur{border-color:var(--ink)}
+.mark{position:absolute;top:-26px;transform:translateX(-50%);font-size:12px;font-weight:600;white-space:nowrap;text-align:center}
+.mark:after{content:"";display:block;width:0;height:0;margin:2px auto 0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid var(--ink)}
+.mark.ready{color:var(--ready)} .mark.ready:after{border-top-color:var(--ready)}
+.mnext{font-size:13px;margin-top:8px}
+.peer{font-size:12px;color:var(--muted);border:1px dashed var(--rule);border-radius:6px;padding:4px 8px;display:inline-block;margin-top:8px}
+.areas{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:14px}
+.area{background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;min-width:0}
+.area h3{font-size:13.5px;margin:0 0 6px}
+.rag{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px 2px 4px;font-weight:600;font-size:13px}
+.rag i{display:inline-flex;width:18px;height:18px;border-radius:50%;align-items:center;justify-content:center;color:#fff;font-style:normal;font-size:11px}
+.rag.r{background:#F7E1DC;color:#8A2F20} .rag.r i{background:var(--gap)}
+.rag.a{background:#FCEFD9;color:#7A4E07} .rag.a i{background:var(--minor)}
+.rag.g{background:#E3F1EA;color:#1D5A40} .rag.g i{background:var(--ready)}
+.rag.n{background:var(--soft);color:var(--muted)} .rag.n i{background:var(--na)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+@media (max-width:1000px){.grid2{grid-template-columns:1fr}}
+.covrow{display:grid;grid-template-columns:190px 1fr 130px;gap:12px;align-items:center;margin:9px 0}
+.covbar{display:flex;height:16px;border-radius:4px;overflow:hidden;background:var(--soft)}
+.covbar span{display:block;height:100%}
+.cv-inf{background:#8B96A1}
+.covlvl{font-size:12px;color:var(--muted);white-space:nowrap;text-align:right}
+.yes{color:#1D5A40;font-weight:600} .no{color:var(--muted)}
+.rag.sm{font-size:12px;padding:1px 9px 1px 3px} .rag.sm i{width:15px;height:15px;font-size:10px}
+.nastat{font-size:12.5px;color:var(--muted)}
+.area .lv{font-size:13px;margin-top:6px} .area .eff2{font-size:12.5px;color:var(--muted);margin-top:2px}
+@media (max-width:1000px){.areas{grid-template-columns:repeat(2,1fr)} .scale{grid-template-columns:repeat(5,1fr)}}
+.radarwrap svg{width:100%;max-width:500px;height:auto}
+.rkey{display:flex;gap:14px;font-size:12px;color:var(--muted);justify-content:center;flex-wrap:wrap}
+.rkey i{display:inline-block;width:14px;height:0;border-top:2px solid var(--ink);margin-right:5px;vertical-align:3px}
+.rkey i.dash{border-top:2px dashed var(--ready)}
+.rkey i.proj{border-top:2px dashed var(--proj)}
+
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:14px}
+.kpi{background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;min-width:0}
+.kl{font-size:12.5px;color:var(--muted)}
+.kv{font-size:22px;font-weight:600;line-height:1.2;margin:2px 0 4px;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kv small{font-size:13px;font-weight:400;color:var(--muted);margin-left:3px}
+.kd{font-size:12.5px;color:var(--muted)}
+p.lead{font-size:14px;margin:14px 2px 14px;max-width:110ch}
+
+.filters{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px}
+.filters select,.filters input[type=search]{padding:4px 6px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--ink);font-size:13px}
+.filters label{display:inline-flex;align-items:center;gap:5px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:12.5px;border-bottom:1px solid var(--rule);padding:6px}
+td{border-bottom:1px solid var(--soft);padding:5px 6px;vertical-align:top}
+td.num,th.num{text-align:right}
+.rowbtn{background:none;border:none;padding:0;cursor:pointer;color:var(--ink);text-align:left;font-size:13px}
+.rowbtn b{font-weight:500}
+.rowbtn .car{display:inline-block;width:12px;color:var(--muted);transition:transform .2s}
+.rowbtn[aria-expanded=true] .car{transform:rotate(90deg)}
+tr.detail td{background:#FAFBFA;padding:8px 6px 10px 24px}
+.dgrid{display:grid;grid-template-columns:120px 1fr;gap:2px 12px;max-width:900px}
+.dgrid dt{color:var(--muted)} .dgrid dd{margin:0}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none;margin-right:5px;vertical-align:baseline}
+.tier{font-size:11.5px;border:1px solid var(--rule);border-radius:999px;padding:0 7px;white-space:nowrap;color:var(--muted)}
+.tier.core{border-color:var(--ink);color:var(--ink)}
+.evl{white-space:nowrap}
+.empty{padding:14px 6px;color:var(--muted)}
+
+.strip{display:flex;gap:12px;align-items:flex-start}
+.grp{display:flex;flex-direction:column;gap:6px;min-width:70px}
+.ticks{display:flex;gap:3px}
+.tick{height:44px;border-radius:3px;border:2px solid var(--c,var(--na));background:var(--c,var(--na));padding:0;cursor:pointer;min-width:8px}
+.tick.NE{background:#D5D9DE;border-color:#D5D9DE}
+.tick.NA{background:var(--soft);border-color:var(--soft)}
+.glabel{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:12px;height:12px;border-radius:2px;border:2px solid var(--ink);display:inline-block}
+
+.cards{columns:3 300px;column-gap:14px}
+.pcard{background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;break-inside:avoid;display:inline-block;width:100%;margin:0 0 14px}
+.pc-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.pc-score{font-size:18px;font-weight:600;white-space:nowrap}
+.pc-score small{font-size:12px;color:var(--muted);font-weight:400;margin-left:2px}
+.pc-sub{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin:2px 0 4px}
+.mbar{height:6px;background:var(--soft);border-radius:3px;overflow:hidden;margin:2px 0 6px}
+.mbar span{display:block;height:100%}
+.pcard ul{list-style:none;margin:6px 0 0;padding:0}
+.crow{display:grid;grid-template-columns:30px 1fr auto 34px 74px;gap:6px;align-items:center;width:100%;background:none;border:none;border-top:1px solid var(--soft);padding:4px 0;text-align:left;cursor:pointer;color:var(--ink);font-size:13px}
+.crow:hover .cnm{text-decoration:underline}
+.cid{color:var(--muted);font-size:12px}
+.csc{font-weight:500;white-space:nowrap;text-align:right}
+.ccf{color:var(--muted);font-size:12px;text-align:right}
+
+.matrix{display:grid;grid-template-columns:120px repeat(3,1fr);gap:5px}
+.mh{font-size:12px;color:var(--muted);padding:0 2px}
+.mh.row{align-self:center}
+.cell{background:var(--soft);border-radius:6px;padding:6px;min-height:60px}
+.cell.start{background:var(--projsoft);outline:1px solid var(--proj)}
+.clabel{font-size:12px;color:var(--proj);font-weight:500;margin:0 0 2px 2px}
+.mchip{text-align:left;font-size:12px;border:1px solid var(--rule);background:var(--paper);border-radius:999px;padding:1px 8px 1px 6px;margin:2px;cursor:pointer;display:inline-flex;align-items:center;color:var(--ink)}
+
+.rc{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.rcc{background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:10px 12px}
+.rcc .kv{font-size:20px}
+.rlist{margin:0;padding:0;list-style:none}
+.rlist li{border-top:1px solid var(--soft);padding:10px 0}
+.rlist li:first-child{border-top:none;padding-top:2px}
+.rlist .rt{font-weight:600}
+.rlist .cite{font-size:12px;color:var(--muted);margin-top:2px}
+.cite button{background:none;border:none;padding:0 2px;color:var(--proj);cursor:pointer;font-size:12px;text-decoration:underline}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.sel{margin-bottom:14px}
+.sel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.sel-head .kl{margin-top:2px}
+.sel-score{display:flex;gap:18px;align-items:baseline;flex-wrap:wrap;margin:8px 0 10px}
+.sel-score .kv{font-size:28px}
+.sel dl{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;margin:0;max-width:900px}
+.sel dt{color:var(--muted)} .sel dd{margin:0}
+.linkbtn{background:none;border:none;padding:0;color:var(--proj);cursor:pointer;font-size:13px;text-decoration:underline}
+.chkbtn{background:none;border:none;padding:0;cursor:pointer;color:var(--ink);text-align:left;font-size:13px}
+.chkbtn:hover span{text-decoration:underline}
+.chkbtn b{font-weight:500}
+tr.hl td{background:var(--projsoft)}
+.req h3{margin-bottom:4px}
+.req ul{margin:4px 0 0;padding-left:18px}
+.req li{margin:6px 0}
+.req .why{display:block;color:var(--muted);font-size:12.5px}
+
+.grid-what{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.tools{display:flex;gap:6px}
+.action{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:start;padding:7px 0;border-top:1px solid var(--soft);cursor:pointer;font-size:13px}
+.action:first-child{border-top:none}
+.action input{margin-top:3px;accent-color:var(--proj);width:15px;height:15px}
+.action .r{display:block;color:var(--muted);font-size:12px}
+.eff{font-size:11.5px;border:1px solid var(--rule);border-radius:999px;padding:0 7px;white-space:nowrap;color:var(--muted)}
+.wi-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:8px}
+.wi-stats > div{background:var(--soft);border-radius:6px;padding:8px 10px}
+.wi-stats .kv{font-size:20px}
+.to{color:var(--proj);font-weight:600}
+.chg{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.chg > span{font-size:12px;border:1px solid var(--rule);border-radius:999px;padding:1px 8px;background:var(--paper)}
+.note{font-size:12px;color:var(--muted);margin:12px 0 0}
+.sec{margin-top:14px}
+footer{margin-top:22px;font-size:12px;color:var(--muted);max-width:120ch}
+
+@media (max-width:1000px){
+  .kpis{grid-template-columns:repeat(3,1fr)}
+  .hero,.grid-what,.grid2{grid-template-columns:1fr}
+  .rc{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:640px){
+  .top{flex-wrap:wrap}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .strip{flex-wrap:wrap;gap:14px 10px}
+  .grp{flex:0 0 auto!important}
+  .matrix{grid-template-columns:72px repeat(3,1fr)}
+  .crow{grid-template-columns:32px 1fr 60px 28px 0}
+  .ccf{display:none}
+  .hide-sm{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  body{background:#fff;font-size:12px}
+  .wrap{padding:0}
+  .tabs,.noprint,#p-what{display:none!important}
+  #p-sum,#p-card,#p-rec{display:block!important}
+  #p-card,#p-rec{break-before:page}
+  .panel,.pcard,.kpi,.rcc{border-color:#ccc;break-inside:avoid}
+}
 </style>
 </head>
 <body>
-__CONTENT__
-<script id="results" type="application/json">__JSON__</script>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Forecast health assessment <span id="statusBadge"></span></h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="actions noprint">
+      <div class="seg" role="group" aria-label="Score view">
+        <button type="button" id="vFinal" aria-pressed="true">Final</button>
+        <button type="button" id="vProv" aria-pressed="false">Measured evidence only</button>
+      </div>
+      <button class="btn" type="button" onclick="window.print()">Save as PDF</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Dashboard pages">
+    <button role="tab" type="button" id="t-sum" aria-controls="p-sum" aria-selected="true">Summary</button>
+    <button role="tab" type="button" id="t-cov" aria-controls="p-cov" aria-selected="false" tabindex="-1">Coverage</button>
+    <button role="tab" type="button" id="t-card" aria-controls="p-card" aria-selected="false" tabindex="-1">Scorecard</button>
+    <button role="tab" type="button" id="t-rec" aria-controls="p-rec" aria-selected="false" tabindex="-1">Recommendations</button>
+    <button role="tab" type="button" id="t-what" aria-controls="p-what" aria-selected="false" tabindex="-1">What-if</button>
+  </nav>
+
+  <!-- ===================== Summary ===================== -->
+  <section role="tabpanel" id="p-sum" aria-labelledby="t-sum">
+    <div class="panel">
+      <div class="mhead">
+        <div><div class="kl">Forecasting maturity</div><div class="mlevel" id="mLevel"></div></div>
+        <div style="text-align:right"><div class="kl">Readiness</div><div id="hVerdict"></div></div>
+      </div>
+      <p class="vwhy" id="hWhy" style="max-width:none"></p>
+      <div class="scale" id="mScale" role="img"></div>
+      <div class="mnext" id="mNext"></div>
+      <span class="peer">Peer comparison with companies in your domain: added later</span>
+      <div class="kl" style="margin-top:14px">Where the 100 points went</div>
+      <div class="split" id="hSplit" role="img"></div>
+      <div class="splitkey" id="hSplitKey"></div>
+    </div>
+    <div class="areas" id="areas"></div>
+    <div class="kpis" id="kpis"></div>
+    <p class="lead" id="headline"></p>
+    <div class="panel" id="findings">
+      <div class="panel-head">
+        <h2>All findings</h2><span class="kl">Select a check to see its finding and recommendation</span>
+        <div class="filters noprint">
+          <label>Area <select id="fPhase"><option value="">All</option></select></label>
+          <label>Status <select id="fEv"><option value="">All</option></select></label>
+          <label><input type="checkbox" id="fGaps"> Only gaps</label>
+          <input type="search" id="fSearch" placeholder="Search checks" aria-label="Search checks">
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== Scorecard ===================== -->
+  <section role="tabpanel" id="p-cov" aria-labelledby="t-cov" hidden>
+    <div class="kpis" id="covKpis"></div>
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-head"><h2>Coverage by area</h2><span class="kl">How much of each area's points we could assess, and from what kind of evidence</span></div>
+      <div id="covAreas"></div>
+      <div class="splitkey" id="covKey"></div>
+    </div>
+    <div class="grid2" style="margin-top:14px">
+      <div class="panel">
+        <div class="panel-head"><h2>What was shared</h2></div>
+        <table><thead><tr><th>Artifact</th><th>Status</th><th>Informs</th></tr></thead><tbody id="covArt"></tbody></table>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>To close the gaps</h2><span class="kl">Ranked by the diagnostics each artifact would add or measure</span></div>
+        <table><thead><tr><th>#</th><th>Ask for</th><th>Covers</th></tr></thead><tbody id="covReq"></tbody></table>
+        <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">"Not found" means the capability wasn't seen in what was shared. It becomes a gap only once the client confirms nothing else exists.</p>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-head"><h2>Every diagnostic and its evidence</h2></div>
+      <div class="cards" id="covList"></div>
+    </div>
+  </section>
+
+  <section role="tabpanel" id="p-card" aria-labelledby="t-card" hidden>
+    <div class="panel radarwrap" style="margin-bottom:14px">
+      <div class="panel-head" style="width:100%;margin-bottom:0"><h2>Score by area</h2><span class="kl">Axis label shows the area's weight in points</span></div>
+      <div id="radarCard" style="width:100%;display:flex;justify-content:center"></div>
+      <div class="rkey"><span><i></i>Area score</span><span><i class="dash"></i>Ready line (67)</span><span>– Not assessed</span></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Every check at a glance</h2>
+        <div class="legend">
+          <span><i class="sw" style="background:var(--gap);border-color:var(--gap)"></i>Red: below 50</span>
+          <span><i class="sw" style="background:var(--minor);border-color:var(--minor)"></i>Amber: 50–66</span>
+          <span><i class="sw" style="background:var(--ready);border-color:var(--ready)"></i>Green: 67+</span>
+          <span><i class="sw" style="background:#D5D9DE;border-color:#D5D9DE"></i>Not assessed</span>
+        </div>
+      </div>
+      <p class="sub">Tile width shows how many points a check carries: core checks count double. Select a tile to see its recommendation.</p>
+      <div class="strip" id="strip"></div>
+    </div>
+    <div class="cards" id="phaseCards" style="margin-top:14px"></div>
+    <div class="panel">
+      <h2>Where to start</h2>
+      <p class="sub">Every gap placed by the points a fix would recover and the effort it takes. Select a check to see its recommendation.</p>
+      <div class="matrix" id="matrix"></div>
+    </div>
+  </section>
+
+  <!-- ===================== Recommendations ===================== -->
+  <section role="tabpanel" id="p-rec" aria-labelledby="t-rec" hidden>
+    <div class="panel sel" id="selPanel" tabindex="-1"></div>
+    <div class="rc" id="rcCards"></div>
+    <div class="panel">
+      <h2>Why the score is where it is</h2>
+      <p class="sub">Root causes built from the knowledge pack's rules and reviewed by a practitioner. Each statement cites the checks behind it.</p>
+      <ul class="rlist" id="rcList"></ul>
+    </div>
+    <div class="panel sec">
+      <h2>Improvement plan</h2>
+      <p class="sub">Fixes ranked by the points they would recover. Recoverable points assume each fix reaches its target score.</p>
+      <table>
+        <thead><tr><th>#</th><th>Fix</th><th class="hide-sm">Checks raised</th><th class="num">Recoverable</th><th>Effort</th><th class="hide-sm">Root cause</th></tr></thead>
+        <tbody id="plan"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== What-if ===================== -->
+  <section role="tabpanel" id="p-what" aria-labelledby="t-what" hidden>
+    <div class="grid-what">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Select fixes</h2>
+          <div class="tools">
+            <button class="btn ghost" type="button" id="quickWins">Select low-effort fixes</button>
+            <button class="btn ghost" type="button" id="clearFixes">Clear</button>
+          </div>
+        </div>
+        <div id="actions"></div>
+      </div>
+      <div class="panel" aria-live="polite">
+        <h2>How the score would change</h2>
+        <p class="sub" id="wiHint"></p>
+        <div class="wi-stats" id="wiStats"></div>
+        <div class="radarwrap"><div id="radarWhat" style="width:100%;display:flex;justify-content:center"></div>
+          <div class="rkey"><span><i></i>Today</span><span><i class="proj"></i>After selected fixes</span><span><i class="dash"></i>Ready line (67)</span></div></div>
+        <div class="sec"><h3>Checks that improve</h3><div class="chg" id="wiChanged"></div></div>
+        <p class="note">Projections assume each fix reaches the target score in the recommendation library, which is a realistic level rather than 100. Fixes marked "if confirmed missing" apply to diagnostics not yet assessed: they count only once the client confirms the capability doesn't exist today. Treat projections as the expected result if each fix is done well.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot"></footer>
+</div>
+
+<script id="results" type="application/json">__RESULTS_JSON__</script>
 <script>
-const tabs = document.querySelectorAll(".tab");
-tabs.forEach((button) => {
-  button.addEventListener("click", () => {
-    tabs.forEach((item) => item.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach((panel) => panel.classList.remove("active"));
-    button.classList.add("active");
-    document.getElementById(button.dataset.tab).classList.add("active");
+const RESULTS = JSON.parse(document.getElementById("results").textContent);
+const DESC = RESULTS.desc;
+const SRC = RESULTS.src;
+const PH = RESULTS.phases, PHN = Object.fromEntries(PH.map(p => [p.k, p]));
+const EV = { V: "Verified", I: "Inferred", A: "From documents", NE: "No evidence", NA: "Not applicable" };
+const EVS = { V: "Verified", I: "Inferred", A: "Document", NE: "No evidence", NA: "n/a" };
+const ROOTS = ["Model", "Data", "Inputs", "Process"];
+const LVL = { L: "Low", M: "Medium", H: "High" };
+const checks = RESULTS.checks;
+const state = { prov: false, actions: new Set(), selected: null };
+const esc = s => String(s).replace(/[&<>"]/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[m]));
+const r1 = x => Math.round(x * 10) / 10;
+const fmt1 = x => (Math.round(x * 10) / 10).toFixed(1).replace(/\.0$/, "");
+const plural = (n, w, pl) => `${n} ${n === 1 ? w : (pl || w + "s")}`;
+
+// effective evidence type and score, given the view
+const viewName = () => state.prov ? "measured" : "final";
+const baseView = fn => fn === scoreOf && state.actions.size === 0;
+const evOf = c => state.prov ? c.mEv : c.ev;
+const scoreOf = c => {
+  const e = evOf(c);
+  if (e === "NE" || e === "NA") return null;
+  const s = state.prov ? c.mScore : c.score;
+  return (s === null || s === undefined) ? null : s;
+};
+const packDenom = () => checks.filter(c => c.inPack).reduce((a, c) => a + c.pts, 0) || 1;
+const effPts = c => c.inPack ? c.pts / packDenom() * 100 : 0;
+const band = s => s === null ? null : s < 50 ? "gap" : s < 67 ? "minor" : "ready";
+const BANDC = { gap: "var(--gap)", minor: "var(--minor)", ready: "var(--ready)" };
+const isGap = c => { const s = scoreOf(c); return s !== null && s < 67; };
+const recoverable = (c, s = scoreOf(c)) => (s === null || c.target === null) ? 0 : effPts(c) * Math.max(0, c.target - s) / 100;
+
+function projScore(c) {
+  let s = scoreOf(c); if (evOf(c) === "NA") return null;
+  for (const a of RESULTS.actions) if (state.actions.has(a.id) && a.targets[c.id] !== undefined) s = Math.max(s === null ? 0 : s, a.targets[c.id]);
+  return s;
+}
+function totals(fn = scoreOf) {
+  if (baseView(fn)) return RESULTS.engine[viewName()].totals;
+  const list = checks.filter(c => c.inPack && evOf(c) !== "NA");
+  const denom = list.reduce((a, c) => a + c.pts, 0) || 1;
+  let ev = 0, ans = 0, lost = 0, ne = 0;
+  list.forEach(c => {
+    const p = c.pts / denom * 100;
+    const e = evOf(c), s = fn(c);
+    if (s === null) { ne += p; return; }
+    const earned = p * s / 100;
+    if (e === "A") ans += earned; else ev += earned;
+    lost += p - earned;
+  });
+  return { ev, ans, lost, ne, score: ev + ans };
+}
+function phaseScore(k, fn = scoreOf) {
+  if (baseView(fn)) {
+    const snap = (RESULTS.engine[viewName()].areas || {})[k];
+    if (!snap || snap.score === null || snap.score === undefined) return { score: null, assessedShare: 0 };
+    return { score: snap.score, assessedShare: snap.assessedShare || 0 };
+  }
+  const list = checks.filter(c => c.inPack && c.ph === k && evOf(c) !== "NA");
+  const denom = list.reduce((a, c) => a + c.pts, 0);
+  if (!denom) return { score: null, assessedShare: 0 };
+  let earned = 0, assessed = 0;
+  list.forEach(c => { const s = fn(c); if (s === null) return; earned += c.pts * s; assessed += c.pts; });
+  return { score: earned / denom, assessedShare: assessed / denom };
+}
+function verdict(fn = scoreOf) {
+  if (baseView(fn)) { const e = RESULTS.engine[viewName()]; return { v: e.v, why: e.why, score: e.score }; }
+  const t = totals(fn);
+  const failed = checks.filter(c => c.gate && c.inPack && evOf(c) !== "NA" && (fn(c) === null || fn(c) < RESULTS.gateFloor));
+  let v = t.score >= 67 ? "ready" : t.score >= 50 ? "gaps" : "not";
+  if (failed.length || t.score === null || t.score === undefined) v = "not";
+  let why = "";
+  if (failed.length) {
+    why = "Not ready because a gate failed: " + failed.map(c => {
+      const s = fn(c);
+      return s === null ? `${c.id} ${c.name.toLowerCase()} has no evidence` : `${c.id} ${c.name.toLowerCase()} scored ${s}`;
+    }).join("; ") + ".";
+    if (failed[0].f) why += " " + failed[0].f;
+  } else if (v === "ready") why = "Score is above the ready line and every gate passed.";
+  else if (v === "gaps") why = "Score is between 50 and 66 and every gate passed.";
+  else why = "Score is below 50.";
+  return { v, why, score: t.score };
+}
+const LEVELS = [{ n: "Initial", lo: 0, hi: 25, c: "r" }, { n: "Developing", lo: 25, hi: 50, c: "r" }, { n: "Defined", lo: 50, hi: 67, c: "a" },
+                { n: "Managed", lo: 67, hi: 85, c: "g" }, { n: "Optimised", lo: 85, hi: 101, c: "g" }];
+const levelOf = sc => LEVELS.findIndex(l => sc >= l.lo && sc < l.hi);
+const RAG = sc => (sc === null || sc === undefined) ? ["n", "Not assessed", "–"] : sc < 50 ? ["r", "Red", "✕"] : sc < 67 ? ["a", "Amber", "!"] : ["g", "Green", "✓"];
+const VTXT = { ready: ["Ready", "v-ready"], gaps: ["Ready with gaps", "v-gaps"], not: ["Not ready", "v-not"] };
+
+/* ---------- Radar ---------- */
+function radar(el, series) {
+  const W = 600, H = 360, cx = 300, cy = 182, R = 120, n = PH.length;
+  const ang = i => -Math.PI / 2 + i * 2 * Math.PI / n;
+  const num = v => (v === null || v === undefined || Number.isNaN(v)) ? 0 : v;
+  const shown = v => (v === null || v === undefined) ? "–" : String(Math.round(v));
+  const pt = (i, v) => [cx + Math.cos(ang(i)) * R * num(v) / 100, cy + Math.sin(ang(i)) * R * num(v) / 100];
+  const poly = vals => vals.map((v, i) => pt(i, v).map(r1).join(",")).join(" ");
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map(x => x.label + ": " + x.vals.map((v, i) => PH[i].short + " " + shown(v)).join(", ")).join("; "))}">`;
+  [25, 50, 75, 100].forEach(v => s += `<polygon points="${poly(PH.map(() => v))}" fill="none" stroke="var(--rule)" stroke-width="1"/>`);
+  PH.forEach((p, i) => { const [x, y] = pt(i, 100); s += `<line x1="${cx}" y1="${cy}" x2="${r1(x)}" y2="${r1(y)}" stroke="var(--rule)"/>`; });
+  s += `<polygon points="${poly(PH.map(() => 67))}" fill="none" stroke="var(--ready)" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+  [25, 50, 75].forEach(v => { const am = -Math.PI / 2 + Math.PI / n, d = R * v / 100 * Math.cos(Math.PI / n); s += `<text x="${r1(cx + Math.cos(am) * d) + 3}" y="${r1(cy + Math.sin(am) * d) - 3}" font-size="10" fill="var(--muted)">${v}</text>`; });
+  series.forEach(se => {
+    s += `<polygon points="${poly(se.vals)}" fill="${se.fill}" stroke="${se.stroke}" stroke-width="2" ${se.dash ? 'stroke-dasharray="6 4"' : ""} style="transition:all .4s"/>`;
+    if (se.dots) se.vals.forEach((v, i) => { if (v === null || v === undefined) return; const [x, y] = pt(i, v); s += `<circle cx="${r1(x)}" cy="${r1(y)}" r="4.5" fill="${BANDC[band(v)]}" stroke="#fff" stroke-width="1.5"/>`; });
+  });
+  PH.forEach((p, i) => {
+    const [x, y] = pt(i, 120), a = ang(i), cos = Math.cos(a);
+    const anchor = Math.abs(cos) < 0.2 ? "middle" : cos > 0 ? "start" : "end";
+    const vals = series.map(se => shown(se.vals[i]));
+    const val = vals.length > 1 && vals[1] !== vals[0] ? `${vals[0]} → ${vals[1]}` : `${vals[0]}`;
+    s += `<text x="${r1(x)}" y="${r1(y) - 6}" text-anchor="${anchor}" font-size="12.5" fill="var(--ink)" font-weight="500">${esc(p.short)} (${p.w})</text>`;
+    s += `<text x="${r1(x)}" y="${r1(y) + 10}" text-anchor="${anchor}" font-size="12.5" fill="${vals.length > 1 && vals[1] !== vals[0] ? "var(--proj)" : "var(--muted)"}">${val}</text>`;
+  });
+  el.innerHTML = s + "</svg>";
+}
+
+/* ---------- Tabs ---------- */
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+function showTab(id) {
+  tabs.forEach(t => { const on = t.id === id; t.setAttribute("aria-selected", on); t.tabIndex = on ? 0 : -1; document.getElementById(t.getAttribute("aria-controls")).hidden = !on; });
+}
+tabs.forEach((t, i) => {
+  t.addEventListener("click", () => showTab(t.id));
+  t.addEventListener("keydown", e => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]; showTab(n.id); n.focus();
   });
 });
-let measured = false;
-document.getElementById("measured-toggle").addEventListener("click", () => {
-  measured = !measured;
-  const toggle = document.getElementById("measured-toggle");
-  toggle.setAttribute("aria-pressed", measured ? "true" : "false");
-  toggle.textContent = measured ? "Showing measured evidence" : "Measured evidence only";
-  document.querySelectorAll("[data-full]").forEach((node) => {
-    if (node.classList.contains("pill")) {
-      const status = measured ? node.dataset.measured : node.dataset.full;
-      node.textContent = status;
-      const tone = measured ? node.dataset.measuredClass : node.dataset.fullClass;
-      node.className = "pill " + (tone || "grey");
-      return;
+
+/* ---------- Header ---------- */
+function renderMeta() {
+  const r = RESULTS;
+  const chips = r.shared.map(s => `<span class="chip">${esc(s)}</span>`).join("") + r.notShared.map(s => `<span class="chip off">${esc(s)} not shared</span>`).join("");
+  document.getElementById("meta").innerHTML = `<span><em>Client</em>${esc(r.client.name)}</span><span><em>Solution</em>${esc(r.client.solution)}</span><span><em>Assessed</em>${esc(r.client.assessed)}</span><span><em>Stage</em>${esc(r.stage || "")}</span><span><em>Based on</em>${chips}</span>`;
+  document.getElementById("statusBadge").innerHTML = state.prov ? `<span class="badge prov">Measured evidence only</span>` : `<span class="badge final">Final</span>`;
+  const foot = document.getElementById("foot");
+  if (foot) foot.textContent = r.footer || "";
+}
+
+/* ---------- Summary ---------- */
+function scoreWith(actionIds) {
+  return c => { let sc = scoreOf(c); if (evOf(c) === "NA") return null;
+    for (const a of RESULTS.actions) if (actionIds.has(a.id) && a.targets[c.id] !== undefined) sc = Math.max(sc === null ? 0 : sc, a.targets[c.id]); return sc; };
+}
+function effortToGreen(k) {
+  const base = phaseScore(k).score;
+  if (base === null || base === undefined) return "Not assessed";
+  if (base >= 67) return "Already green";
+  const ids = new Set();
+  for (const e of ["L", "M", "H"]) {
+    RESULTS.actions.forEach(a => { if (a.effort === e) ids.add(a.id); });
+    if (phaseScore(k, scoreWith(ids)).score >= 67) return `${LVL[e]} effort to reach green`;
+  }
+  return "Needs more than the current fixes";
+}
+function renderSummary() {
+  const t = totals(), vd = verdict(), sc = vd.score;
+  const eng = RESULTS.engine[viewName()];
+  const useEng = state.actions.size === 0 && eng.levelIndex !== undefined && eng.levelIndex >= 0 && sc !== null && sc !== undefined;
+  const li = useEng ? eng.levelIndex : Math.max(levelOf(sc), 0);
+  const L = LEVELS[li];
+  const levelName = useEng ? eng.maturity : L.n;
+  const scShown = (sc === null || sc === undefined) ? "–" : Math.round(sc);
+  document.getElementById("mLevel").innerHTML = (sc === null || sc === undefined)
+    ? `Not assessed<small>No scored checks</small>`
+    : `Level ${li + 1} · ${levelName}<small>${scShown} out of 100</small>`;
+  document.getElementById("hVerdict").innerHTML = `<span class="verdict ${VTXT[vd.v][1]}">${VTXT[vd.v][0]}</span>`;
+  document.getElementById("hWhy").textContent = vd.why;
+  const pos = s2 => { const clamped = Math.min(Math.max(s2 || 0, 0), 100); const i = Math.max(levelOf(clamped), 0), l = LEVELS[i]; return (i + (clamped - l.lo) / (Math.min(l.hi, 100) - l.lo)) * 20; };
+  const scale = document.getElementById("mScale");
+  scale.innerHTML = LEVELS.map((l, i) => `<div class="seg5 ${l.c}${i === li ? " cur" : ""}"><div class="n">Level ${i + 1}</div><div class="t">${l.n}</div><div class="rg">${l.lo}–${Math.min(l.hi, 101) - 1}</div></div>`).join("")
+    + `<div class="mark" style="left:${pos(sc)}%">You: ${Math.round(sc)}</div><div class="mark ready" style="left:${pos(67)}%">Ready line 67</div>`;
+  scale.setAttribute("aria-label", `Maturity scale: level ${li + 1} of 5, ${L.n}, score ${Math.round(sc)}; ready line at 67`);
+  const plan = planRows(); const top3 = plan.slice(0, 3).reduce((a, x) => a + x.rec, 0);
+  const next = LEVELS[li + 1];
+  document.getElementById("mNext").innerHTML = next
+    ? `<b>To reach level ${li + 2}, ${next.n}:</b> +${Math.ceil(next.lo - sc)} points. The top three fixes recover about +${fmt1(top3)}; the full improvement plan is on the Recommendations page.`
+    : `<b>At the top level.</b> Keep monitoring and refresh the assessment after major changes.`;
+  const segs = [["sp-ev", t.ev, "From measured evidence"], ["sp-ans", t.ans, "From documents"], ["sp-lost", t.lost, "Lost on assessed checks"], ["sp-ne", t.ne, "Not assessed"]];
+  const sp = document.getElementById("hSplit");
+  sp.innerHTML = segs.map(([c, v]) => `<span class="${c}" style="width:${v}%"></span>`).join("");
+  sp.setAttribute("aria-label", segs.map(([, v, l]) => `${l} ${fmt1(v)} points`).join(", "));
+  document.getElementById("hSplitKey").innerHTML = segs.map(([c, v, l]) => `<span><i class="${c}"></i>${l} <b>${fmt1(v)}</b></span>`).join("");
+  document.getElementById("areas").innerHTML = PH.map(p => {
+    const a = phaseScore(p.k).score;
+    if (a === null || a === undefined) {
+      return `<div class="area"><h3>${esc(p.name)} <span class="kl">(${p.w} pts)</span></h3>
+      <span class="rag n"><i aria-hidden="true">–</i>Not assessed</span>
+      <div class="lv">No scored checks in this pack</div>
+      <div class="eff2">Not assessed</div></div>`;
     }
-    node.textContent = measured ? node.dataset.measured : node.dataset.full;
+    const [rc, rl, ic] = RAG(a);
+    return `<div class="area"><h3>${esc(p.name)} <span class="kl">(${p.w} pts)</span></h3>
+      <span class="rag ${rc}"><i aria-hidden="true">${ic}</i>${rl}</span>
+      <div class="lv">Level ${levelOf(a) + 1} · ${LEVELS[levelOf(a)].n} <span class="kl">· ${Math.round(a)}/100</span></div>
+      <div class="eff2">${effortToGreen(p.k)}</div></div>`;
+  }).join("");
+
+  const ph = PH.map(p => ({ p, ...phaseScore(p.k) })).filter(x => x.score !== null && x.score !== undefined);
+  const weakest = ph.length ? ph.reduce((a, b) => b.score < a.score ? b : a) : null;
+  const lb = lostByRoot();
+  const rankedRoots = Object.entries(lb).sort((a, b) => b[1].lost - a[1].lost);
+  const topRoot = rankedRoots.length ? rankedRoots[0][0] : "—";
+  const topLost = rankedRoots.length ? rankedRoots[0][1].lost : 0;
+  const totalLost = Object.values(lb).reduce((a, b) => a + b.lost, 0);
+  const assessed = checks.filter(c => c.ev !== "NA" && scoreOf(c) !== null).length, scorable = checks.filter(c => c.ev !== "NA").length;
+  const na = checks.filter(c => c.ev === "NA").length, ne = scorable - assessed;
+  const card = (l, v, d) => `<div class="kpi"><div class="kl">${l}</div><div class="kv">${v}</div><div class="kd">${d}</div></div>`;
+  document.getElementById("kpis").innerHTML = [
+    card("Weakest area", weakest ? `${Math.round(weakest.score)}<small>/ 100</small>` : "–", weakest ? esc(weakest.p.name) : "No scored area"),
+    card("Main root cause", totalLost ? esc(topRoot) : "—", totalLost ? `${Math.round(topLost / totalLost * 100)}% of points lost on gaps` : "No points lost on gaps"),
+    card("Top three fixes", `+${fmt1(top3)}<small>points</small>`, "If each reaches its target score"),
+    card("Checks assessed", `${assessed}<small>of ${scorable}</small>`, `${plural(ne, "check")} not assessed; ${na} not applicable`),
+    card("Points from documents", `${fmt1(t.ans)}`, t.ans ? `of the ${Math.round(t.score)} points scored` : (state.prov ? "Excluded in this view" : "No documents shared"))
+  ].join("");
+  document.getElementById("headline").textContent = eng.headline || RESULTS.headline || "";
+  renderTable();
+}
+function buildFilters() {
+  const fp = document.getElementById("fPhase"), fe = document.getElementById("fEv");
+  PH.forEach(p => fp.insertAdjacentHTML("beforeend", `<option value="${p.k}">${p.name}</option>`));
+  [["r", "Red"], ["a", "Amber"], ["g", "Green"], ["na", "Not assessed"]].forEach(([k, v]) => fe.insertAdjacentHTML("beforeend", `<option value="${k}">${v}</option>`));
+  ["fPhase", "fEv", "fGaps", "fSearch"].forEach(id => document.getElementById(id).addEventListener("input", renderTable));
+}
+function scoreCell(c, s = scoreOf(c)) {
+  if (evOf(c) === "NA") return "n/a";
+  if (s === null) return "–";
+  return `<span class="dot" style="background:${BANDC[band(s)]}"></span>${s}`;
+}
+const statusKey = c => { const s = scoreOf(c); return s === null ? "na" : RAG(s)[0]; };
+function statusCell(c) {
+  const s = scoreOf(c);
+  if (evOf(c) === "NA") return `<span class="nastat">Not applicable</span>`;
+  if (s === null) return `<span class="nastat">Not assessed</span>`;
+  const [rc, rl, ic] = RAG(s);
+  return `<span class="rag sm ${rc}"><i aria-hidden="true">${ic}</i>${rl}</span>`;
+}
+function renderTable() {
+  const ph = document.getElementById("fPhase").value, fe = document.getElementById("fEv").value;
+  const gapsOnly = document.getElementById("fGaps").checked, q = document.getElementById("fSearch").value.trim().toLowerCase();
+  const rows = checks.filter(c =>
+    (!ph || c.ph === ph) && (!fe || statusKey(c) === fe) && (!gapsOnly || isGap(c)) &&
+    (!q || (c.id + " " + c.name + " " + c.f).toLowerCase().includes(q))
+  ).sort((a, b) => (scoreOf(a) ?? 999) - (scoreOf(b) ?? 999) || (a.ev === "NA") - (b.ev === "NA") || a.id.localeCompare(b.id, undefined, { numeric: true }));
+  const tb = document.getElementById("rows");
+  if (!rows.length) { tb.innerHTML = `<tr><td colspan="2" class="empty">No checks match these filters. Clear a filter to see more.</td></tr>`; return; }
+  tb.innerHTML = rows.map(c => {
+    return `<tr><td><button class="chkbtn" type="button" data-id="${c.id}"><b>${c.id}</b> <span>${esc(c.name)}</span></button>${c.gate ? ' <span class="tier core">Gate</span>' : ""}</td><td>${statusCell(c)}</td></tr>`;
+  }).join("");
+  tb.querySelectorAll(".chkbtn").forEach(b => b.addEventListener("click", () => openFinding(b.dataset.id)));
+}
+function openFinding(id) {
+  state.selected = id;
+  showTab("t-rec"); renderRecs();
+  const el = document.getElementById("selPanel");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" }); el.focus({ preventScroll: true });
+}
+function renderSelected() {
+  const el = document.getElementById("selPanel");
+  const c = checks.find(x => x.id === state.selected);
+  if (!c) { el.innerHTML = `<h2>Check detail</h2><p class="sub" style="margin:4px 0 0">Select a check in the findings table on the Summary page, or any tile on the Scorecard, to see its finding, recommendation and target score here.</p>`; return; }
+  const s = scoreOf(c), e = evOf(c), p = effPts(c);
+  const evTxt = (c.cap && e === "V" ? "Doesn't exist" : EV[e]) + (c.gate ? " (gate)" : "");
+  const sc = e === "NA" ? "n/a" : s === null ? "–" : `<span class="dot" style="background:${BANDC[band(s)]};width:12px;height:12px"></span>${s}<small>/ 100</small>`;
+  const tgt = c.target !== null && s !== null && c.target > s ? `${c.target}` : (c.target !== null && s !== null ? "Already at or above target" : "–");
+  el.innerHTML = `<div class="sel-head"><div><h2>${c.id} ${esc(c.name)}</h2><div class="kl">${PHN[c.ph].name} · ${c.tier === "C" ? "Core" : "Supporting"} check</div></div>
+      <button type="button" class="linkbtn" id="backToFindings">Back to all findings</button></div>
+    <div class="sel-score"><div><div class="kl">Score</div><div class="kv">${sc}</div></div><div><div class="kl">Evidence</div><div class="kv" style="font-size:16px">${evTxt}</div></div>${e !== "NA" ? `<div><div class="kl">Points</div><div class="kv" style="font-size:16px">${s === null ? 0 : fmt1(p * s / 100)} of ${fmt1(p)}</div></div>` : ""}</div>
+    <dl><dt>What it checks</dt><dd>${esc(DESC[c.id] || "")}</dd><dt>Finding</dt><dd>${esc(c.f)}</dd><dt>Source</dt><dd>${esc(SRC[c.id] || "–")}</dd>
+      <dt>Recommendation</dt><dd>${esc(c.rec)}</dd><dt>Target score</dt><dd>${tgt}</dd></dl>`;
+  document.getElementById("backToFindings").addEventListener("click", () => { showTab("t-sum"); document.getElementById("findings").scrollIntoView({ block: "start" }); });
+}
+
+/* ---------- Scorecard ---------- */
+function renderStrip() {
+  const el = document.getElementById("strip"); el.innerHTML = "";
+  for (const p of PH) {
+    const list = checks.filter(c => c.ph === p.k);
+    const g = document.createElement("div"); g.className = "grp"; g.style.flex = `${p.w} 1 0`;
+    const t = document.createElement("div"); t.className = "ticks";
+    for (const c of list) {
+      const b = document.createElement("button"); b.type = "button";
+      const e = evOf(c), s = scoreOf(c);
+      b.className = "tick " + e;
+      b.style.flex = `${Math.max(c.pts, 0.5)} 1 0`;
+      if (s !== null) b.style.setProperty("--c", BANDC[band(s)]);
+      const st = e === "NA" ? "not applicable" : s === null ? "not assessed" : RAG(s)[1].toLowerCase();
+      b.title = `${c.id} ${c.name}: ${st}, ${c.tier === "C" ? "core" : "supporting"} check`;
+      b.setAttribute("aria-label", b.title);
+      b.addEventListener("click", () => openFinding(c.id));
+      t.appendChild(b);
+    }
+    const l = document.createElement("div"); l.className = "glabel"; l.textContent = `${p.short} (${p.w})`; l.title = p.name;
+    g.append(t, l); el.appendChild(g);
+  }
+}
+function renderPhaseCards() {
+  const el = document.getElementById("phaseCards");
+  el.innerHTML = PH.map(p => {
+    const { score, assessedShare } = phaseScore(p.k);
+    const missing = score === null || score === undefined;
+    const vs = missing ? "Not assessed" : assessedShare < 0.5 ? "Insufficient evidence" : score >= 67 ? "Ready" : score >= 50 ? "Ready with gaps" : "Not ready";
+    const dz = !missing && p.k === "DA" && checks.some(c => c.ph === "DA" && scoreOf(c) === 0);
+    const list = checks.filter(c => c.ph === p.k);
+    const items = list.map(c => {
+      const e = evOf(c);
+      return `<li><button type="button" class="crow" data-id="${c.id}"><span class="cid">${c.id}</span><span class="cnm">${esc(c.name)}</span><span><span class="tier ${c.tier === "C" ? "core" : ""}">${c.tier === "C" ? "Core" : "Supp."}</span></span><span class="csc">${scoreCell(c)}</span><span class="ccf"></span></button></li>`;
+    }).join("");
+    const bar = missing ? "var(--na)" : BANDC[band(score)];
+    const pts = missing ? "Not assessed" : `${fmt1(p.w * score / 100)} of ${p.w} points`;
+    return `<div class="pcard"><div class="pc-head"><h3>${p.name}</h3><span class="pc-score">${missing ? "–" : Math.round(score)}<small>/ 100</small></span></div>
+      <div class="pc-sub"><span>${dz ? "Not ready" : vs}</span><span>${pts}</span></div>
+      <div class="mbar"><span style="width:${missing ? 0 : score}%;background:${bar}"></span></div><ul>${items}</ul></div>`;
+  }).join("");
+  el.querySelectorAll(".crow").forEach(b => b.addEventListener("click", () => openFinding(b.dataset.id)));
+}
+function renderMatrix() {
+  const el = document.getElementById("matrix");
+  const rb = v => v >= 2 ? "H" : v >= 1 ? "M" : "L";
+  const RL = { H: "2+ points", M: "1–2 points", L: "Under 1 point" };
+  el.innerHTML = `<div></div>` + ["L", "M", "H"].map(e => `<div class="mh">${LVL[e]} effort</div>`).join("");
+  for (const imp of ["H", "M", "L"]) {
+    el.insertAdjacentHTML("beforeend", `<div class="mh row">${RL[imp]} recoverable</div>`);
+    for (const eff of ["L", "M", "H"]) {
+      const cell = document.createElement("div"); const start = imp === "H" && eff === "L";
+      cell.className = "cell" + (start ? " start" : "");
+      if (start) cell.innerHTML = `<div class="clabel">Start here</div>`;
+      checks.filter(c => isGap(c) && recoverable(c) > 0 && rb(recoverable(c)) === imp && c.eff === eff).forEach(c => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "mchip";
+        b.innerHTML = `<span class="dot" style="background:${BANDC[band(scoreOf(c))]}"></span>${c.id} ${esc(c.name)}`;
+        b.title = `Score ${scoreOf(c)}, +${fmt1(recoverable(c))} points recoverable`;
+        b.addEventListener("click", () => openFinding(c.id)); cell.appendChild(b);
+      });
+      el.appendChild(cell);
+    }
+  }
+}
+
+/* ---------- Recommendations ---------- */
+function planRows() {
+  return RESULTS.actions.map(a => {
+    let rec = 0; const raised = [];
+    Object.entries(a.targets).forEach(([id, tg]) => { const c = checks.find(x => x.id === id); if (!c || c.ev === "NA") return; const s = scoreOf(c) === null ? 0 : scoreOf(c); if (tg > s) { rec += effPts(c) * (tg - s) / 100; raised.push(id); } });
+    return { ...a, rec, raised };
+  }).filter(a => a.rec > 0).sort((x, y) => y.rec - x.rec || "LMH".indexOf(x.effort) - "LMH".indexOf(y.effort));
+}
+function citeLinks(ids) { return ids.map(id => `<button type="button" data-id="${id}">${id}</button>`).join(" "); }
+function lostByRoot() {
+  const lb = Object.fromEntries(ROOTS.map(r => [r, { lost: 0, n: 0 }]));
+  checks.forEach(c => { const s = scoreOf(c); if (s !== null && c.root && s < 67) { lb[c.root].lost += effPts(c) * (100 - s) / 100; lb[c.root].n++; } });
+  return lb;
+}
+function renderRecs() {
+  renderSelected();
+  const lostBy = lostByRoot();
+  const tot = Object.values(lostBy).reduce((a, b) => a + b.lost, 0);
+  document.getElementById("rcCards").innerHTML = ROOTS.map(r => `<div class="rcc"><div class="kl">${r}</div><div class="kv">${tot ? Math.round(lostBy[r].lost / tot * 100) : 0}%<small> of points lost on gaps</small></div><div class="kd">${plural(lostBy[r].n, "check")} with gaps</div></div>`).join("");
+  const rl = document.getElementById("rcList");
+  rl.innerHTML = RESULTS.rootCauses.map(rc => `<li><div class="rt">${esc(rc.title)} <span class="tier">${rc.root}</span></div><div>${esc(rc.text)}</div><div class="cite">Based on ${citeLinks(rc.checks)}</div></li>`).join("");
+  const plan = planRows();
+  document.getElementById("plan").innerHTML = plan.map((a, i) => `<tr class="${state.selected && a.raised.includes(state.selected) ? "hl" : ""}"><td>${i + 1}</td><td>${esc(a.title)}</td><td class="hide-sm cite">${citeLinks(a.raised)}</td><td class="num"><b>+${fmt1(a.rec)}</b></td><td>${LVL[a.effort] || "—"}</td><td class="hide-sm">${a.root}</td></tr>`).join("");
+  document.querySelectorAll("#p-rec .cite button").forEach(b => b.addEventListener("click", () => openFinding(b.dataset.id)));
+}
+
+/* ---------- What-if ---------- */
+function buildWhatIf() {
+  const el = document.getElementById("actions"); el.innerHTML = "";
+  planRows().forEach(a => {
+    const lab = document.createElement("label"); lab.className = "action";
+    lab.innerHTML = `<input type="checkbox" value="${a.id}" ${state.actions.has(a.id) ? "checked" : ""}><span>${esc(a.title)}<span class="r">Raises ${a.raised.join(", ")}. Up to +${fmt1(a.rec)} points</span></span><span class="eff">${LVL[a.effort] || "—"} effort</span>`;
+    lab.querySelector("input").addEventListener("change", e => { e.target.checked ? state.actions.add(a.id) : state.actions.delete(a.id); renderWhatIf(); });
+    el.appendChild(lab);
   });
-});
+}
+function renderWhatIf() {
+  const cur = verdict(), pr = verdict(projScore);
+  const arrow = (a, b) => a === b ? `${a}` : `${a} <span class="to">→ ${b}</span>`;
+  const raised = checks.filter(c => projScore(c) !== null && projScore(c) > (scoreOf(c) === null ? 0 : scoreOf(c)));
+  document.getElementById("wiHint").textContent = state.actions.size ? `${plural(state.actions.size, "fix", "fixes")} selected.` : "Select fixes on the left to see the projected scores.";
+  document.getElementById("wiStats").innerHTML =
+    `<div><div class="kl">Overall score</div><div class="kv">${arrow(Math.round(cur.score), Math.round(pr.score))}</div></div>` +
+    `<div><div class="kl">Verdict</div><div class="kv" style="font-size:16px">${arrow(VTXT[cur.v][0], VTXT[pr.v][0])}</div></div>` +
+    `<div><div class="kl">Maturity level</div><div class="kv" style="font-size:16px">${arrow(LEVELS[levelOf(cur.score)].n, LEVELS[levelOf(pr.score)].n)}</div></div>`;
+  const now = PH.map(p => phaseScore(p.k).score), after = PH.map(p => phaseScore(p.k, projScore).score);
+  const series = [{ label: "Today", vals: now, fill: "rgba(27,39,51,.06)", stroke: "var(--ink)", dots: !state.actions.size }];
+  if (state.actions.size) series.push({ label: "After fixes", vals: after, fill: "rgba(58,91,160,.10)", stroke: "var(--proj)", dash: true, dots: true });
+  radar(document.getElementById("radarWhat"), series);
+  document.getElementById("wiChanged").innerHTML = raised.length
+    ? raised.map(c => `<span><b>${c.id}</b> ${esc(c.name)} ${scoreOf(c) === null ? "not assessed" : scoreOf(c)} <span class="to">→ ${projScore(c)}</span></span>`).join("")
+    : `<span style="border:none;padding:0;color:var(--muted)">None yet.</span>`;
+}
+document.getElementById("quickWins").addEventListener("click", () => { planRows().forEach(a => { if (a.effort === "L") state.actions.add(a.id); }); buildWhatIf(); renderWhatIf(); });
+document.getElementById("clearFixes").addEventListener("click", () => { state.actions.clear(); buildWhatIf(); renderWhatIf(); });
+
+/* ---------- View toggle and print ---------- */
+function setView(prov) {
+  state.prov = prov;
+  document.getElementById("vFinal").setAttribute("aria-pressed", !prov);
+  document.getElementById("vProv").setAttribute("aria-pressed", prov);
+  renderAll();
+}
+document.getElementById("vFinal").addEventListener("click", () => setView(false));
+document.getElementById("vProv").addEventListener("click", () => setView(true));
+
+
+/* ---------- Coverage ---------- */
+function renderCoverage() {
+  const C = RESULTS.coverage, lvl = c => evOf(c);
+  const total = checks.reduce((a, c) => a + c.pts, 0);
+  const by = k => checks.filter(c => lvl(c) === k).reduce((a, c) => a + c.pts, 0);
+  const ver = by("V"), inf = by("I"), doc = by("A"), ne = by("NE") + by("NA");
+  const withEv = checks.filter(c => ["V", "I", "A"].includes(lvl(c))).length;
+  const sharedKinds = C.artifacts.filter(a => a.shared).length;
+  const card = (l, v, d) => `<div class="kpi"><div class="kl">${l}</div><div class="kv">${v}</div><div class="kd">${d}</div></div>`;
+  document.getElementById("covKpis").innerHTML = [
+    card("Points with evidence", `${fmt1(ver + inf + doc)}<small>of ${fmt1(total)}</small>`, "Coverage, not a score"),
+    card("Diagnostics with evidence", `${withEv}<small>of ${checks.length}</small>`, `${checks.length - withEv} not assessed`),
+    card("Verified", `${fmt1(ver)}<small>points</small>`, "Computed from data, or inspected in code"),
+    card("Inferred", `${fmt1(inf)}<small>points</small>`, "Deduced from patterns"),
+    card("From documents", `${fmt1(doc)}<small>points</small>`, doc ? "Always attested" : "No documents shared")
+  ].join("");
+  document.getElementById("covAreas").innerHTML = PH.map(p => {
+    const L = checks.filter(c => c.ph === p.k), pts = L.reduce((a, c) => a + c.pts, 0);
+    const v = L.filter(c => lvl(c) === "V").reduce((a, c) => a + c.pts, 0), i = L.filter(c => lvl(c) === "I").reduce((a, c) => a + c.pts, 0),
+          d = L.filter(c => lvl(c) === "A").reduce((a, c) => a + c.pts, 0), n = pts - v - i - d;
+    const w = x => `${x / pts * 100}%`;
+    return `<div class="covrow"><div><b>${esc(p.name)}</b> <span class="kl">(${p.w} pts)</span></div>
+      <div class="covbar" role="img" aria-label="${esc(p.name)}: ${fmt1(v)} verified, ${fmt1(i)} inferred, ${fmt1(d)} from documents, ${fmt1(n)} not assessed, of ${fmt1(pts)} points">
+        <span class="sp-ev" style="width:${w(v)}"></span><span class="cv-inf" style="width:${w(i)}"></span><span class="sp-ans" style="width:${w(d)}"></span><span class="sp-ne" style="width:${w(n)}"></span></div>
+      <div class="covlvl">${Math.round((pts - n) / pts * 100)}% covered</div></div>`;
+  }).join("");
+  document.getElementById("covKey").innerHTML = [["sp-ev", "Verified"], ["cv-inf", "Inferred"], ["sp-ans", "From documents"], ["sp-ne", "Not assessed"]]
+    .map(([c, l]) => `<span><i class="${c}"></i>${l}</span>`).join("");
+  document.getElementById("covArt").innerHTML = C.artifacts.map(a =>
+    `<tr><td><b>${esc(a.kind)}</b></td><td class="${a.shared ? "yes" : "no"}">${a.shared ? "Shared" : "Not shared"}</td><td>${esc(a.informs)}</td></tr>`).join("");
+  document.getElementById("covReq").innerHTML = C.request.map((q, k) => {
+    const L = q.checks.map(id => checks.find(c => c.id === id)).filter(Boolean);
+    const add = L.filter(c => lvl(c) === "NE").length;
+    const tags = L.map(c => `<button class="chkbtn" type="button" data-id="${c.id}" style="padding:0 4px 0 0"><b>${c.id}</b></button>`).join(" ");
+    const weak = L.filter(c => { const s = scoreOf(c); return s !== null && s < 67; }).length;
+    const note = add ? `Adds ${plural(add, "diagnostic")} not yet assessed` : (weak ? `Covers ${plural(weak, "diagnostic")} below the ready line` : "Turns findings into measured results");
+    return `<tr><td>${k + 1}</td><td>${esc(q.ask)}<div class="kl">${note}</div></td><td>${tags}</td></tr>`;
+  }).join("");
+  document.getElementById("covList").innerHTML = PH.map(p => {
+    const L = checks.filter(c => c.ph === p.k);
+    const rows = L.map(c => {
+      const e = lvl(c), txt = e === "NE" ? "No evidence" : e === "NA" ? "Not applicable" : EV[e];
+      return `<li><button type="button" class="crow chkbtn" data-id="${c.id}"><span class="cid">${c.id}</span><span class="cnm">${esc(c.name)}</span><span class="ccf" style="grid-column:span 2;text-align:right">${txt}</span></button></li>`;
+    }).join("");
+    return `<div class="pcard"><div class="pc-head"><h3>${esc(p.name)}</h3></div><ul>${rows}</ul></div>`;
+  }).join("");
+  document.querySelectorAll("#p-cov .chkbtn").forEach(b => b.addEventListener("click", () => openFinding(b.dataset.id)));
+}
+function renderAll() { renderCoverage(); renderMeta(); renderSummary(); radar(document.getElementById("radarCard"), [{ label: "Area score", vals: PH.map(p => phaseScore(p.k).score), fill: "rgba(27,39,51,.08)", stroke: "var(--ink)", dots: true }]); renderStrip(); renderPhaseCards(); renderMatrix(); renderRecs(); buildWhatIf(); renderWhatIf(); }
+buildFilters(); renderAll();
 </script>
 </body>
 </html>

@@ -29,6 +29,13 @@ def _scores(results: dict) -> dict:
     return {item["id"]: item for item in results["diagnostics"]}
 
 
+def _dashboard_payload(html: str) -> dict:
+    marker = '<script id="results" type="application/json">'
+    start = html.index(marker) + len(marker)
+    end = html.index("</script>", start)
+    return json.loads(html[start:end])
+
+
 class DiagnosticTests(unittest.TestCase):
     def test_help(self) -> None:
         completed = subprocess.run(
@@ -168,9 +175,32 @@ class DiagnosticTests(unittest.TestCase):
             dashboard = report_engagement(engagement)
             html = dashboard.read_text(encoding="utf-8")
             self.assertIn("Not ready", html)
+            self.assertIn("Summary", html)
+            self.assertIn("Coverage", html)
             self.assertIn("Scorecard", html)
             self.assertIn("Recommendations", html)
+            self.assertIn("What-if", html)
+            self.assertIn("Measured evidence only", html)
             self.assertNotIn("AcmeForecast", html)
+            self.assertNotIn("Client A", html)
+            self.assertNotIn("carefully guarded", html)
+            self.assertNotIn("fonts.googleapis.com", html)
+            self.assertNotIn("client_pipeline.py", html)
+            payload = _dashboard_payload(html)
+            by_id = {item["id"]: item for item in payload["checks"]}
+            self.assertEqual(payload["engine"]["final"]["verdict"], results["overall"]["verdict"])
+            self.assertEqual(payload["engine"]["final"]["score"], results["overall"]["score"])
+            self.assertEqual(by_id["D14"]["score"], scores["D14"]["score"])
+            self.assertIsNone(by_id["D43"]["score"])
+            self.assertTrue(by_id["D43"]["inPack"])
+            self.assertEqual(by_id["D43"]["ev"], "NE")
+            self.assertIsNone(by_id["D21"]["score"])
+            self.assertEqual(by_id["D21"]["ev"], "NE")
+            self.assertFalse(by_id["D21"]["inPack"])
+            self.assertEqual(by_id["D21"]["name"], "Experiment tracking")
+            self.assertIsNone(by_id["D22"]["score"])
+            self.assertIsNone(by_id["D10"]["score"])
+            self.assertNotEqual(by_id["D14"]["score"], 82)
 
     def test_repeat_run_matches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
