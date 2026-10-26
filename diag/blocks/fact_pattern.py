@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from diag.blocks.common import Match
+from diag.blocks.common import Match, location_at
 
 
 def run(parsed, params: dict, vocab: dict, context: dict) -> list[Match]:
@@ -20,7 +20,7 @@ def run(parsed, params: dict, vocab: dict, context: dict) -> list[Match]:
         matches.append(
             Match(
                 fact=fact,
-                location={"kind": "line", "value": str(line_no)},
+                location=location_at(parsed, found.start(), line_no),
                 values={key: value for key, value in found.groupdict().items() if value is not None},
                 match_strength="pattern",
             )

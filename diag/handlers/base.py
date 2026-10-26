@@ -40,6 +40,17 @@ def dispatch_handler(path: Path, record: dict) -> ParsedArtifact | None:
         return logs.parse_log(path, record)
     if family == "data" or detected == "csv":
         return data.parse_data(path, record)
-    if family == "document" or detected in {"txt", "md", "docx"}:
+    if family == "document" or detected in {
+        "txt",
+        "md",
+        "docx",
+        "vtt",
+        "transcript",
+        "png",
+        "jpeg",
+        "gif",
+        "webp",
+        "tiff",
+    }:
         return documents.parse_document(path, record)
     return None

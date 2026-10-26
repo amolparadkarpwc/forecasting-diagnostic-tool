@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -11,6 +12,25 @@ class Match:
     location: dict
     values: dict = field(default_factory=dict)
     match_strength: str = "pattern"
+
+
+def location_at(parsed: Any, index: int, line_no: int) -> dict[str, str]:
+    """Use a section cue location when the match falls inside one, else the line."""
+    sections = getattr(parsed, "sections", None) or []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        start = section.get("start")
+        end = section.get("end")
+        if not isinstance(start, int) or not isinstance(end, int):
+            continue
+        if index < start or index >= end:
+            continue
+        location = section.get("location")
+        if isinstance(location, dict) and location.get("kind") and str(location.get("value") or ""):
+            return {"kind": str(location["kind"]), "value": str(location["value"])}
+        break
+    return {"kind": "line", "value": str(line_no)}
 
 
 def resolve_vocab(value, vocab: dict):

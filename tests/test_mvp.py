@@ -19,6 +19,10 @@ DEMO = ROOT / "examples" / "demo_input"
 
 sys.path.insert(0, str(ROOT))
 
+from diag.blocks.fact_pattern import run as fact_pattern  # noqa: E402
+from diag.blocks.phrase_search import run as phrase_search  # noqa: E402
+from diag.handlers.documents import parse_document  # noqa: E402
+from diag.intake.identify import identify  # noqa: E402
 from diag.intake.safety import assess_model  # noqa: E402
 from diag.intake.unpack import extract_zip  # noqa: E402
 from diag.rules.derived import rate_above  # noqa: E402
@@ -27,6 +31,33 @@ from diag.runner import init_engagement, report_engagement, run_engagement  # no
 
 def _scores(results: dict) -> dict:
     return {item["id"]: item for item in results["diagnostics"]}
+
+
+def _png_1x1(red: int = 255) -> bytes:
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        crc = zlib.crc32(tag + payload) & 0xFFFFFFFF
+        return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", crc)
+
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    raw = bytes((0, red, 0, 0))
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+def _record(path: str, detected: str) -> dict:
+    return {
+        "artifact_id": "A001",
+        "path": path,
+        "detected_type": detected,
+        "family": "document",
+        "encoding": "",
+        "status": "readable",
+        "reason": "",
+        "period_covered": "",
+        "version_group": Path(path).stem.lower(),
+    }
 
 
 def _dashboard_payload(html: str) -> dict:
@@ -222,6 +253,205 @@ class DiagnosticTests(unittest.TestCase):
             left["versions"].pop("generated_at", None)
             right["versions"].pop("generated_at", None)
             self.assertEqual(left, right)
+
+    def test_vtt_transcript_evidence_points_at_cue(self) -> None:
+        fixture = ROOT / "tests" / "planted" / "transcripts" / "meeting.vtt"
+        artifact = parse_document(fixture, _record("meeting.vtt", "vtt"))
+        self.assertIsNotNone(artifact)
+        assert artifact is not None
+        self.assertNotIn("-->", artifact.text)
+        self.assertNotIn("align:", artifact.text)
+        self.assertNotIn("WEBVTT", artifact.text)
+        self.assertNotIn("generated for the diagnostic fixture", artifact.text)
+        self.assertEqual(artifact.sections[0]["speaker"], "Priya Shah")
+        self.assertEqual(artifact.sections[0]["timestamp"], "00:00:10.000")
+        self.assertEqual(artifact.sections[0]["location"], {"kind": "cue", "value": "00:00:10.000"})
+        self.assertIn("naive baseline", artifact.sections[0]["text"])
+        self.assertNotIn("naive baseline", artifact.sections[1]["text"])
+        self.assertNotIn("Priya Shah", artifact.text)
+        phrases = phrase_search(artifact, {"phrases": ["naive baseline"]}, {}, {})
+        self.assertEqual(phrases[0].location, {"kind": "cue", "value": "00:00:10.000"})
+        facts = fact_pattern(artifact, {"pattern": "naive baseline"}, {}, {})
+        self.assertEqual(facts[0].location, {"kind": "cue", "value": "00:00:10.000"})
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            shutil.copy(fixture, engagement / "input" / "meeting.vtt")
+            run_engagement(engagement, PACK)
+            evidence = json.loads((engagement / "output" / "evidence_log.json").read_text(encoding="utf-8"))
+            hits = [
+                record
+                for record in evidence["records"]
+                if record["signal_id"] == "baseline_mentioned" and record["source"]["file"].endswith("meeting.vtt")
+            ]
+            self.assertTrue(hits)
+            self.assertTrue(all(record["source"]["location"]["kind"] == "cue" for record in hits))
+            self.assertTrue(all(record["source"]["location"]["value"] == "00:00:10.000" for record in hits))
+            self.assertTrue(all(record["evidence_level"] == "Attested" for record in hits))
+            self.assertTrue(all(record["handler"] == "documents" for record in hits))
+            self.assertNotIn("-->", hits[0]["fact"])
+            self.assertIn("naive baseline", hits[0]["fact"].lower())
+
+    def test_webvtt_text_and_speaker_lines_are_transcripts(self) -> None:
+        fixture = ROOT / "tests" / "planted" / "transcripts" / "meeting.txt"
+        detected, family, _encoding = identify(fixture, fixture.read_bytes())
+        self.assertEqual(detected, "vtt")
+        self.assertEqual(family, "document")
+        self.assertNotIn(detected, {"unknown", "txt"})
+        speaker = b"Jane Doe 0:01:02\nWe compared against a naive baseline.\n"
+        detected, family, _encoding = identify(Path("talk.txt"), speaker)
+        self.assertEqual((detected, family), ("transcript", "document"))
+        voiced = b"<v Jane Doe>hello from the meeting</v>\n"
+        detected, family, _encoding = identify(Path("voice.txt"), voiced)
+        self.assertEqual((detected, family), ("transcript", "document"))
+        detected, family, _encoding = identify(Path("notes.vtt"), b"not a caption header\n")
+        self.assertEqual((detected, family), ("vtt", "document"))
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            shutil.copy(fixture, engagement / "input" / "notes.txt")
+            talk = engagement / "input" / "talk.txt"
+            talk.write_bytes(speaker)
+            run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            notes = next(row for row in inventory if row["path"].endswith("notes.txt"))
+            self.assertEqual(notes["detected_type"], "vtt")
+            self.assertEqual(notes["family"], "document")
+            self.assertEqual(notes["status"], "readable")
+            self.assertNotEqual(notes["detected_type"], "unknown")
+            spoken_row = next(row for row in inventory if row["path"].endswith("talk.txt"))
+            self.assertEqual(spoken_row["detected_type"], "transcript")
+            self.assertEqual(spoken_row["family"], "document")
+            self.assertEqual(spoken_row["status"], "readable")
+            spoken = parse_document(talk, _record("talk.txt", "transcript"))
+            assert spoken is not None
+            self.assertEqual(spoken.sections[0]["speaker"], "Jane Doe")
+            self.assertEqual(spoken.sections[0]["location"], {"kind": "cue", "value": "0:01:02"})
+            self.assertNotIn("0:01:02", spoken.text)
+            matches = phrase_search(spoken, {"phrases": ["naive baseline"]}, {}, {})
+            self.assertEqual(matches[0].location, {"kind": "cue", "value": "0:01:02"})
+
+    def test_png_is_inventoried_without_requiring_tesseract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            (engagement / "input" / "chart.png").write_bytes(_png_1x1(255))
+            (engagement / "input" / "renamed.txt").write_bytes(_png_1x1(1))
+            run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            installed = shutil.which("tesseract") is not None
+            for name in ("chart.png", "renamed.txt"):
+                row = next(item for item in inventory if item["path"].endswith(name))
+                self.assertEqual(row["detected_type"], "png")
+                self.assertEqual(row["family"], "document")
+                self.assertNotEqual(row["status"], "unreadable")
+                if installed:
+                    self.assertIn(row["status"], {"readable", "manual_review"})
+                else:
+                    self.assertEqual(row["status"], "manual_review")
+                    self.assertIn("OCR not installed", row["reason"])
+
+    def test_corrupt_image_does_not_abort_the_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            (engagement / "input" / "broken.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"this is not a png")
+            (engagement / "input" / "note.txt").write_text(
+                "A naive baseline is the comparison.\n",
+                encoding="utf-8",
+            )
+            results = run_engagement(engagement, PACK)
+            self.assertIn("diagnostics", results)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            broken = next(row for row in inventory if row["path"].endswith("broken.png"))
+            self.assertEqual(broken["detected_type"], "png")
+            self.assertEqual(broken["family"], "document")
+            self.assertEqual(broken["status"], "unreadable")
+            self.assertIn("corrupt", broken["reason"])
+            note = next(row for row in inventory if row["path"].endswith("note.txt"))
+            self.assertEqual(note["status"], "readable")
+            evidence = json.loads((engagement / "output" / "evidence_log.json").read_text(encoding="utf-8"))
+            self.assertTrue(any(record["signal_id"] == "baseline_mentioned" for record in evidence["records"]))
+
+    def test_image_signatures(self) -> None:
+        webp_body = b"WEBP" + b"VP8 " + (4).to_bytes(4, "little") + b"\x00\x00\x00\x00"
+        samples = {
+            "jpeg": b"\xff\xd8\xff\xe0" + b"\x00" * 8 + b"\xff\xd9",
+            "gif": b"GIF89a" + b"\x01\x00\x01\x00\x00\x00\x00" + b"\x3b",
+            "webp": b"RIFF" + len(webp_body).to_bytes(4, "little") + webp_body,
+            "tiff": b"II*\x00" + (8).to_bytes(4, "little") + b"\x00\x00",
+        }
+        names = {"jpeg": "photo.jpg", "gif": "frame.gif", "webp": "shot.webp", "tiff": "scan.tiff"}
+        for kind, data in samples.items():
+            detected, family, _encoding = identify(Path(names[kind]), data)
+            self.assertEqual(detected, kind)
+            self.assertEqual(family, "document")
+        gif87, family, _encoding = identify(Path("old.gif"), b"GIF87a" + b"\x01\x00\x01\x00\x80\x00\x00" + b"\x3b")
+        self.assertEqual((gif87, family), ("gif", "document"))
+        big, family, _encoding = identify(Path("scan.tif"), b"MM\x00*" + (8).to_bytes(4, "big") + b"\x00\x00")
+        self.assertEqual((big, family), ("tiff", "document"))
+        renamed, family, _encoding = identify(Path("notes.txt"), _png_1x1())
+        self.assertEqual((renamed, family), ("png", "document"))
+        labeled, family, _encoding = identify(Path("notes.png"), b"hello from a mislabeled note\n")
+        self.assertEqual(labeled, "txt")
+        self.assertNotEqual(labeled, "png")
+
+    def test_image_ocr_text_is_attested(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        fake = SimpleNamespace(returncode=0, stdout=b"The slide cites a naive baseline.\n", stderr=b"")
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            (engagement / "input" / "figure.png").write_bytes(_png_1x1())
+            with (
+                patch("diag.handlers.images.shutil.which", return_value="tesseract"),
+                patch("diag.handlers.images.subprocess.run", return_value=fake),
+            ):
+                run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            row = next(item for item in inventory if item["path"].endswith("figure.png"))
+            self.assertEqual(row["detected_type"], "png")
+            self.assertEqual(row["status"], "readable")
+            evidence = json.loads((engagement / "output" / "evidence_log.json").read_text(encoding="utf-8"))
+            hits = [
+                record
+                for record in evidence["records"]
+                if record["signal_id"] == "baseline_mentioned" and record["source"]["file"].endswith("figure.png")
+            ]
+            self.assertTrue(hits)
+            self.assertTrue(all(record["evidence_level"] == "Attested" for record in hits))
+            self.assertTrue(all(record["handler"] == "documents" for record in hits))
+            self.assertIn("naive baseline", hits[0]["fact"].lower())
+
+    def test_docx_transcript_cues(self) -> None:
+        try:
+            import docx
+        except ImportError:
+            self.skipTest("python-docx is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            document = docx.Document()
+            document.add_paragraph("Priya Shah 0:04:05")
+            document.add_paragraph("The notes mention a naive baseline.")
+            document.save(engagement / "input" / "transcript.docx")
+            run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            row = next(item for item in inventory if item["path"].endswith("transcript.docx"))
+            self.assertEqual(row["detected_type"], "docx")
+            self.assertEqual(row["family"], "document")
+            self.assertEqual(row["status"], "readable")
+            evidence = json.loads((engagement / "output" / "evidence_log.json").read_text(encoding="utf-8"))
+            hits = [
+                record
+                for record in evidence["records"]
+                if record["signal_id"] == "baseline_mentioned" and str(record["source"]["file"]).endswith("transcript.docx")
+            ]
+            self.assertTrue(hits)
+            self.assertEqual(hits[0]["source"]["location"], {"kind": "cue", "value": "0:04:05"})
+            self.assertEqual(hits[0]["evidence_level"], "Attested")
 
 
 if __name__ == "__main__":

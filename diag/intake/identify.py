@@ -7,6 +7,8 @@ import json
 import zipfile
 from pathlib import Path
 
+from diag.handlers.images import image_kind
+from diag.handlers.transcripts import looks_like_transcript, looks_like_vtt
 from diag.util import decode_bytes
 
 
@@ -139,6 +141,9 @@ def identify(path: Path, data: bytes) -> tuple[str, str, str]:
         office = _office_kind(path)
         if office is not None:
             return office[0], office[1], ""
+    kind = image_kind(data)
+    if kind is not None:
+        return kind, "document", ""
     suffix = path.suffix.lower()
     if _looks_like_pickle(data) or suffix in {".pkl", ".pickle"}:
         return "pickle", "model", ""
@@ -155,6 +160,13 @@ def identify(path: Path, data: bytes) -> tuple[str, str, str]:
     text, encoding = decode_bytes(data) if data else ("", "")
     if not data:
         return "unknown", "none", encoding
+
+    # WEBVTT is a transcript even when the extension is .txt. Speaker lines only
+    # override plain-text extensions so code and configs keep their own trials.
+    if looks_like_vtt(text) or suffix == ".vtt":
+        return "vtt", "document", encoding
+    if suffix in {"", ".txt", ".text", ".md", ".markdown"} and looks_like_transcript(text):
+        return "transcript", "document", encoding
 
     if _looks_like_notebook(text) or suffix == ".ipynb":
         return "notebook", "code", encoding
