@@ -1,0 +1,130 @@
+# Shared vocabularies for the data diagnostics. Referenced from entries as @name or @name.key.
+# Pattern objects are parameters for the code_call and sql_pattern building blocks (see README, engine requirements).
+
+version: 0.1.0
+
+# --- Validation tools -------------------------------------------------------
+validation_libraries:
+  strong: [pandera, great_expectations, pydeequ, soda, pandas_schema, frictionless]
+  weak: [pydantic, cerberus, jsonschema]          # general validators: count only with a DataFrame or row-level call
+profiling_libraries: [ydata_profiling, pandas_profiling, sweetviz, dataprep, dtale]   # profiling is not a control
+
+validation_calls:
+  pandera: [DataFrameSchema, DataFrameModel, SchemaModel, Column, Check, validate, check_types, check_input, check_output]
+  great_expectations: ["expect_*", ExpectationSuite, Checkpoint, run_checkpoint, add_or_update_expectation_suite, get_validator, validate]
+  pydeequ: [VerificationSuite, Check, ColumnProfilerRunner]
+  soda: [Scan, execute, add_sodacl_yaml_file]
+  pandas_schema: [Schema, validate]
+  frictionless: [validate, Schema]
+
+validation_config_markers:
+  great_expectations: {file_family: config, key_globs: ["expectations.*.expectation_type", "expectations.*.type", "expectation_suite_name"]}
+  pandera: {file_family: config, key_globs: ["schema_type", "columns.*.checks"]}
+  dbt: {file_family: config, key_globs: ["models.*.columns.*.tests", "models.*.columns.*.data_tests", "models.*.tests", "models.*.data_tests", "sources.*.tables.*.columns.*.tests"]}
+  soda: {file_family: config, text_patterns: ['^checks for \w+']}
+dbt_test_names: [not_null, unique, relationships, accepted_values, "dbt_utils.unique_combination_of_columns", "dbt_expectations.*"]
+
+assertion_predicates: [isna, isnull, notna, notnull, duplicated, is_unique, is_monotonic_increasing, min, max, between, dtype, dtypes, nunique, shape, empty]
+
+# --- Gap filling ------------------------------------------------------------
+zero_fill_patterns:
+  python_chains:                                   # method chains on one object, or one variable within followed_by_lines
+    - {chain: [asfreq, fillna], args: {fillna: {value: 0}}}
+    - {chain: [reindex, fillna], args: {fillna: {value: 0}}}
+    - {call: reindex, args: {fill_value: 0}}
+    - {call: asfreq, args: {fill_value: 0}}
+    - {chain: [resample, sum], arg_absent: {sum: min_count}}   # empty bins sum to 0 by default
+    - {call: unstack, args: {fill_value: 0}}
+    - {call: pivot_table, args: {fill_value: 0}}
+    - {chain: [pivot, fillna], args: {fillna: {value: 0}}}
+    - {chain: [merge, fillna], args: {merge: {how: [left, right, outer]}, fillna: {value: 0}}, merge_partner_terms: "@calendar_table_terms"}
+  sql:
+    - {functions: [COALESCE, IFNULL, NVL, ISNULL], second_arg: 0, after_join: [LEFT, RIGHT, FULL], join_table_terms: "@calendar_table_terms"}
+    - {functions: [ZEROIFNULL], after_join: [LEFT, RIGHT, FULL], join_table_terms: "@calendar_table_terms"}
+
+gap_handling_patterns:                             # gaps flagged, excluded or imputed with a recorded method
+  python:
+    - {call: interpolate}
+    - {call: ffill, args_present: [limit]}
+    - {call: fillna, args: {method: [ffill, bfill]}, args_present: [limit]}
+    - {call: dropna, args_present: [subset], target_in_subset: true}
+    - {call: mask}
+    - {indicator_column: true, desc: "A column built from isna()/isnull() before filling, e.g. df['was_missing'] = df[y].isna()"}
+  full_credit_requires: indicator_column           # imputation without an indicator is handled, but noted
+
+# --- Parsing ----------------------------------------------------------------
+coercion_patterns:
+  - {call: to_numeric, args: {errors: coerce}, followed_by_any: [fillna, dropna]}
+  - {call: to_datetime, args: {errors: coerce}, followed_by_any: [dropna]}
+  - {call: astype, args: {errors: ignore}}
+  - {call: to_numeric, args: {errors: ignore}}
+coercion_exemption:                                # coercion is fine when failures are counted, logged or rejected
+  followed_by_any: [raise, "logger.*", "logging.*", "warnings.warn", to_csv, to_parquet]
+bad_line_patterns:
+  - {call: read_csv, args: {on_bad_lines: [skip, warn]}}
+  - {call: read_csv, args: {error_bad_lines: false}}
+  - {call: read_table, args: {on_bad_lines: [skip, warn]}}
+strict_parsing_patterns:
+  - {call: read_csv, args_present: [dtype]}
+  - {call: read_csv, args: {on_bad_lines: error}}
+  - {call: to_numeric, args: {errors: coerce}, followed_by_any: [raise, "logger.*", "logging.*", to_csv, to_parquet]}
+
+# --- Duplicates and keys ----------------------------------------------------
+dedupe_patterns:
+  exact_rows:
+    - {call: drop_duplicates, args_absent: [subset]}
+    - {sql_keyword: DISTINCT}
+  keyed:
+    - {call: drop_duplicates, args_present: [subset], preceded_by_any: [sort_values]}
+    - {chain: [groupby, last]}
+    - {chain: [groupby, first]}
+    - {sql_window: ROW_NUMBER, partition_by: required, order_by: required, filter_equals: 1}
+    - {sql_keyword: QUALIFY}
+merge_check_patterns:
+  - {call: merge, args_present: [validate]}
+  - {call: merge, args: {indicator: true}, followed_by_any: [value_counts, query, "logger.*", raise]}
+  - {call: join, args_present: [validate]}
+
+# --- Ranges, calendars, units -----------------------------------------------
+range_check_patterns:
+  - {call: clip}
+  - {call: between}
+  - {assert_predicates: [min, max, between, lt, gt, le, ge]}
+  - {filter_then: {comparison: ["< 0", "<= 0"], then_any: ["logger.*", "logging.*", "warnings.warn", to_csv, raise]}}
+
+calendar_normalisation_patterns:
+  - {call: to_period}
+  - {call: resample, args: {rule_regex: '^W-(MON|TUE|WED|THU|FRI|SAT|SUN)$'}}
+  - {call: isocalendar}
+  - {sql_functions: [DATE_TRUNC, TRUNC, WEEKOFYEAR, ISOWEEK, DATE_PART]}
+
+unit_terms: [uom, unit_of_measure, base_unit, conversion_factor, pack_size, case_size, units_per_case, inner_pack, currency, fx_rate, exchange_rate, rate_to_base]
+unit_factors: [6, 10, 12, 24, 100, 1000]           # reciprocals are added by the engine
+
+calendar_table_terms: [calendar, dim_date, date_dim, dim_calendar, date_spine, all_weeks, all_dates, week_dim, periods]
+closure_event_types: [closure, store_closed, closed, holiday_closure, lockdown, refit, stocktake]
+returns_terms: [return, returns, refund, credit_note, rma, cancel, cancellation, reversal]
+
+# --- Stage hints --------------------------------------------------------------
+engineered_column_patterns: ['^lag_?\d+', '_lag_?\d+$', '^rolling_', '_roll(ing)?_', '^ewm_', '^fourier_', '^(sin|cos)_', '_ma_?\d+$', '^target_enc']
+source_system_column_terms: [posting_date, doc_no, document_number, transaction_id, txn_id, line_no, line_number, invoice_no, order_no, receipt_id, matnr, werks, vbeln, posnr, erdat]
+
+data_prep_markers:                                 # code that loads or prepares data
+  python_calls: [read_csv, read_excel, read_parquet, read_sql, read_sql_query, read_table, read_json, merge, groupby, pivot_table, resample, asfreq]
+  sql: ["SELECT", "INSERT INTO", "CREATE TABLE", "MERGE INTO"]
+  dbt_functions: [ref, source]
+
+# --- Documents ----------------------------------------------------------------
+dq_section_titles: [data quality, data validation, data checks, data preparation, data cleansing, data cleaning, data pipeline, ingestion, data sources, data dictionary]
+dq_phrases: [validation, validated, data quality check, quality check, schema check, null check, completeness check, duplicate check, range check, expectation suite, data contract, reconciliation, missing values, missing weeks, gaps in the data]
+dq_metric_patterns:
+  - '(?P<value>\d+(\.\d+)?)\s?%\s?(?P<metric>missing|complete|completeness|duplicates?|nulls?)'
+  - '(?P<metric>completeness|missing|duplicates?)\D{0,20}(?P<value>\d+(\.\d+)?)\s?%'
+
+# --- Logs -----------------------------------------------------------------------
+log_validation_terms: [validation, validate, expectation, checkpoint, schema check, data check, dq check, great_expectations, pandera, soda]
+log_status_terms:
+  pass: [pass, passed, success, succeeded, ok, '"success": true']
+  fail: [fail, failed, failure, error, '"success": false', violation]
+log_publish_terms: [published, forecast written, upload complete, export complete, run complete]
+log_schema_change_terms: [schema change, column added, column removed, column renamed, new column, missing column, type changed]

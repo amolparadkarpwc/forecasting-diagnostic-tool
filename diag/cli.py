@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -74,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "test":
             import unittest
 
+            checker = Path(__file__).resolve().parents[1] / "pack" / "tools" / "check_pack.py"
+            if checker.exists():
+                completed = subprocess.run([sys.executable, str(checker)], check=False)
+                if completed.returncode != 0:
+                    return completed.returncode
             suite = unittest.defaultTestLoader.discover("tests")
             outcome = unittest.TextTestRunner(verbosity=2).run(suite)
             return 0 if outcome.wasSuccessful() else 1

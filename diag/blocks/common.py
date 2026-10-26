@@ -33,20 +33,36 @@ def location_at(parsed: Any, index: int, line_no: int) -> dict[str, str]:
     return {"kind": "line", "value": str(line_no)}
 
 
-def resolve_vocab(value, vocab: dict):
-    """Expand @name references into vocabulary term lists."""
-    if isinstance(value, str) and value.startswith("@"):
-        entry = vocab.get(value[1:], {})
-        if isinstance(entry, dict):
-            return list(entry.get("terms") or entry.get("modules") or [])
-        if isinstance(entry, list):
-            return list(entry)
+def _lookup_vocab(ref: str, vocab: dict):
+    parts = ref[1:].split(".")
+    if parts[0] in {"pack", "data_stage"}:
+        return ref
+    current = vocab
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+            continue
+        # Older packs store one file under the vocabulary name.
+        entry = vocab.get(parts[0], {})
+        if isinstance(entry, dict) and len(parts) == 1:
+            listed = entry.get("terms") or entry.get("modules")
+            if listed is not None:
+                return list(listed)
         return []
+    if isinstance(current, dict) and ("terms" in current or "modules" in current) and len(current) <= 3:
+        return list(current.get("terms") or current.get("modules") or [])
+    return current
+
+
+def resolve_vocab(value, vocab: dict):
+    """Expand @name and @name.key references. @pack and @data_stage stay as engine refs."""
+    if isinstance(value, str) and value.startswith("@"):
+        return _lookup_vocab(value, vocab)
     if isinstance(value, list):
         expanded = []
         for item in value:
             resolved = resolve_vocab(item, vocab)
-            if isinstance(item, str) and item.startswith("@"):
+            if isinstance(item, str) and item.startswith("@") and isinstance(resolved, list):
                 expanded.extend(resolved)
             else:
                 expanded.append(resolved)

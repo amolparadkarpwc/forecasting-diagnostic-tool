@@ -16,6 +16,15 @@ from diag.outputs.findings import (
     source_summary,
 )
 from diag.rules.review import COUNTED
+from diag.scoring.combination import (
+    combine,
+    condition_score,
+    control_score,
+    data_area_ids,
+    evaluate_gate,
+    gate_floor,
+    verdict_for_pack,
+)
 from diag.scoring.coverage import summarise
 from diag.scoring.readiness import gate_failures, maturity_for, status_for, verdict_for
 from diag.scoring.routes import best_level, choose_route
@@ -103,61 +112,192 @@ def _is_provisional(diagnostic: dict, records: list[dict], route: str) -> bool:
     return False
 
 
+def _stockout_signals(pack: dict) -> set[str]:
+    stockouts = (pack.get("meta") or {}).get("stockouts") or {}
+    if stockouts.get("in_scope", True):
+        return set()
+    classes = ((pack.get("shared") or {}).get("zero_classification") or {}).get("classes") or []
+    return {f"zero.{item['id']}" for item in classes if str(item.get("id") or "").startswith("stockout")}
+
+
+def _plain_measures(slot: dict) -> tuple[dict, dict]:
+    values: dict = {}
+    detail: dict = {}
+    for name, raw in (slot or {}).items():
+        if isinstance(raw, dict):
+            detail[name] = raw
+            if raw.get("computed") and raw.get("value") is not None:
+                values[name] = raw["value"]
+        else:
+            values[name] = raw
+    return values, detail
+
+
+def _measure_report(diagnostic: dict, values: dict, detail: dict, scores: dict, stage: str, active: set[str]) -> list[dict]:
+    measures = (diagnostic.get("data_route") or {}).get("measures") or {}
+    if not isinstance(measures, dict):
+        return []
+    rows = []
+    for name, spec in measures.items():
+        if not isinstance(spec, dict):
+            continue
+        extra = detail.get(name) or {}
+        handled_by = sorted(set(spec.get("handled_by") or []) & active)
+        handled = stage == "raw_source" and bool(handled_by)
+        later = spec.get("release") == "later"
+        computed = name in scores and not later
+        rows.append(
+            {
+                "id": name,
+                "value": None if later else values.get(name, extra.get("value")),
+                "score": None if not computed else scores.get(name),
+                "computed": computed,
+                "critical": bool(spec.get("critical")),
+                "level": extra.get("level"),
+                "data_stage": stage,
+                "handled": handled,
+                "handled_by": handled_by,
+                "reason_not_computed": "not_implemented" if later else (None if computed else extra.get("reason") or "not_computable"),
+            }
+        )
+    return rows
+
+
+def _confirmed(records: list[dict]) -> tuple[set[str], dict[str, str]]:
+    confirmed: set[str] = set()
+    levels: dict[str, str] = {}
+    rank = {"Attested": 1, "Inferred": 2, "Verified": 3}
+    for record in records:
+        signal_id = record.get("signal_id") or ""
+        if record.get("status") == "confirmed":
+            confirmed.add(signal_id)
+        level = record.get("evidence_level") or ""
+        if rank.get(level, 0) and (signal_id not in levels or rank[level] < rank.get(levels[signal_id], 9)):
+            # The weakest counted level decides whether inferred evidence can meet a gate.
+            levels[signal_id] = level
+    return confirmed, levels
+
+
+def _score_data_area(pack: dict, diagnostic: dict, counted: list[dict], slot: dict, stage: str) -> dict:
+    active = {record["signal_id"] for record in counted}
+    values, detail = _plain_measures(slot)
+    condition, scores = condition_score(diagnostic, values, stage, active)
+    control = control_score(diagnostic, active)
+    score, label = combine(condition, control)
+    confirmed, levels = _confirmed(counted)
+    categories = {name: value for name, value in values.items() if isinstance(value, str)}
+    gates = pack["meta"].get("gates") if isinstance(pack["meta"].get("gates"), dict) else {}
+    gate_result = {}
+    if diagnostic.get("gate"):
+        gate_result = evaluate_gate(
+            diagnostic,
+            score,
+            active,
+            scores,
+            confirmed,
+            gate_floor(pack),
+            levels=levels,
+            categories=categories,
+            inferred_needs_review=bool(gates.get("inferred_trip_requires_review", True)),
+        )
+    route = "data" if condition is not None else choose_route(counted, False)
+    return {
+        "score": score,
+        "route": route if score is not None else "none",
+        "caps": [],
+        "label": label,
+        "condition": condition,
+        "control": control,
+        "measures": _measure_report(diagnostic, values, detail, scores, stage, active),
+        "gate_result": gate_result,
+    }
+
+
 def score_diagnostics(pack: dict, evidence: list[dict], measure_values: dict, *, include_attested: bool = True) -> list[dict]:
     red = float((pack["meta"].get("status_bands") or {}).get("red_below", 50))
     amber = float((pack["meta"].get("status_bands") or {}).get("amber_below", 67))
+    data_ids = data_area_ids(pack)
+    ignored = _stockout_signals(pack)
+    stage = "model_ready"
     results = []
     for diagnostic in pack["diagnostics"]:
         records = [record for record in evidence if record["diagnostic_id"] == diagnostic["id"]]
         if not include_attested:
             records = [record for record in records if record.get("evidence_level") != "Attested"]
-        counted = [record for record in records if record["status"] in COUNTED]
+        counted = [
+            record
+            for record in records
+            if record["status"] in COUNTED
+            and record.get("signal_id") not in ignored
+            and record.get("owner_diagnostic") is not None
+        ]
         active = sorted({record["signal_id"] for record in counted})
         synthesis = diagnostic.get("tier") == "synthesis" or diagnostic.get("synthesis")
         if synthesis:
             results.append(_blank(diagnostic, status="Not scored", route="none"))
             continue
-        measured = data_score(diagnostic, measure_values)
+        slot = measure_values.get(diagnostic["id"]) or {}
         caps: list[dict] = []
-        if measured is not None:
-            score = measured
-            route = "data"
+        label = None
+        condition = None
+        control = None
+        measure_rows: list[dict] = []
+        gate_result: dict = {}
+        if diagnostic["id"] in data_ids and isinstance((diagnostic.get("data_route") or {}).get("measures"), dict):
+            scored = _score_data_area(pack, diagnostic, counted, slot, stage)
+            score = scored["score"]
+            route = scored["route"]
+            label = scored["label"]
+            condition = scored["condition"]
+            control = scored["control"]
+            measure_rows = scored["measures"]
+            gate_result = scored["gate_result"]
         else:
-            score, caps = apply_rules(diagnostic.get("scoring") or [], active)
-            route = choose_route(counted, False)
+            measured = data_score(diagnostic, measure_values)
+            if measured is not None:
+                score = measured
+                route = "data"
+            else:
+                score, caps = apply_rules(diagnostic.get("scoring") or [], active)
+                route = choose_route(counted, False)
         score = round_score(score)
         status = status_for(score, red, amber)
         level = best_level(counted)
-        slot = measure_values.get(diagnostic["id"]) or {}
         counted_route = route if score is not None else "none"
         # Sub-checks see every record, including ones held for review.
         # The score itself still uses only counted records.
-        results.append(
-            {
-                "id": diagnostic["id"],
-                "name": diagnostic["name"],
-                "area": diagnostic["area"],
-                "tier": diagnostic["tier"],
-                "points": diagnostic["points"],
-                "gate": bool(diagnostic.get("gate")),
-                "question": diagnostic.get("question") or "",
-                "gap_request": diagnostic.get("gap_request") or "",
-                "applicable": True,
-                "route": counted_route,
-                "evidence_level": level,
-                "score": score,
-                "status": status,
-                "caps_applied": caps,
-                "provisional": _is_provisional(diagnostic, records, counted_route),
-                "signals": active,
-                "records": [record["record_id"] for record in counted if record.get("record_id")],
-                "finding": finding_text(diagnostic, score, counted_route, slot, records),
-                "detail": check_details(diagnostic, slot, records),
-                "review_checklist": list(diagnostic.get("review_checklist") or []),
-                "recommendation_ids": recommendation_ids(diagnostic, active),
-                "source_summary": source_summary(counted),
-            }
-        )
+        row = {
+            "id": diagnostic["id"],
+            "name": diagnostic["name"],
+            "area": diagnostic["area"],
+            "tier": diagnostic["tier"],
+            "points": diagnostic["points"],
+            "gate": bool(diagnostic.get("gate")),
+            "question": diagnostic.get("question") or "",
+            "gap_request": diagnostic.get("gap_request") or "",
+            "applicable": True,
+            "route": counted_route,
+            "evidence_level": level,
+            "score": score,
+            "status": status,
+            "caps_applied": caps,
+            "provisional": _is_provisional(diagnostic, records, counted_route),
+            "signals": active,
+            "records": [record["record_id"] for record in counted if record.get("record_id")],
+            "finding": finding_text(diagnostic, score, counted_route, slot if isinstance(slot, dict) else {}, records),
+            "detail": check_details(diagnostic, slot if not any(isinstance(item, dict) for item in (slot or {}).values()) else {}, records),
+            "review_checklist": list(diagnostic.get("review_checklist") or []),
+            "recommendation_ids": recommendation_ids(diagnostic, active),
+            "source_summary": source_summary(counted),
+        }
+        if diagnostic["id"] in data_ids:
+            row["condition_score"] = condition
+            row["control_score"] = control
+            row["combined_label"] = label
+            row["measures"] = measure_rows
+            if diagnostic.get("gate"):
+                row["gate_result"] = gate_result
+        results.append(row)
     return results
 
 
@@ -232,17 +372,33 @@ def _artifact_lists(inventory: list[dict], parsed: list) -> tuple[list[dict], li
     return shared, missing
 
 
+def _gap_text(diagnostic: dict) -> str:
+    request = diagnostic.get("gap_request") or ""
+    if not isinstance(request, dict):
+        return str(request or "")
+    label = diagnostic.get("combined_label")
+    if diagnostic.get("score") is None:
+        parts = [request.get("condition") or "", request.get("control") or ""]
+        return " ".join(part.strip() for part in parts if part.strip())
+    if label == "Controls not evidenced":
+        return str(request.get("control") or "").strip()
+    if label == "Condition not measured":
+        return str(request.get("condition") or "").strip()
+    return ""
+
+
 def _targeted(diagnostics: list[dict]) -> list[dict]:
     rows = []
     for diagnostic in diagnostics:
         if diagnostic["tier"] == "synthesis":
             continue
-        score = diagnostic["score"]
-        if score is not None and score >= 50:
-            continue
-        request = diagnostic.get("gap_request") or ""
+        request = _gap_text(diagnostic)
         if not request:
-            continue
+            score = diagnostic["score"]
+            legacy = diagnostic.get("gap_request") or ""
+            if score is None or score >= 50 or isinstance(legacy, dict) or not legacy:
+                continue
+            request = str(legacy)
         rows.append((diagnostic["points"], diagnostic["id"], request))
     rows.sort(key=lambda row: (-row[0], row[1]))
     return [
@@ -251,7 +407,9 @@ def _targeted(diagnostics: list[dict]) -> list[dict]:
     ]
 
 
-def _headline(verdict: str, score, failed: list[dict]) -> str:
+def _headline(verdict: str, score, failed: list[dict], reason: str = "") -> str:
+    if reason:
+        return f"{verdict}. {reason}"
     if failed:
         detail = ", ".join(
             f"{item['id']} ({item['reason']})" for item in failed
@@ -265,16 +423,33 @@ def _headline(verdict: str, score, failed: list[dict]) -> str:
 def _overall(diagnostics: list[dict], pack: dict) -> dict:
     meta = pack["meta"]
     score = overall_score(diagnostics)
-    failed = gate_failures(diagnostics, list(meta.get("gates") or []), float(meta.get("gate_floor", 40)))
-    bands = meta.get("verdict_bands") or {}
-    verdict = verdict_for(score, failed, float(bands.get("ready", 67)), float(bands.get("ready_with_gaps", 50)))
+    reason = ""
+    if isinstance(meta.get("verdict"), list):
+        verdict, reason = verdict_for_pack(pack, diagnostics, score)
+        floor = gate_floor(pack)
+        failed = [
+            {
+                "id": item["id"],
+                "score": item.get("score"),
+                "reason": "trigger met",
+                "floor": floor,
+            }
+            for item in diagnostics
+            if (item.get("gate_result") or {}).get("status") == "tripped"
+        ]
+    else:
+        gate_ids = meta.get("gates") if isinstance(meta.get("gates"), list) else []
+        failed = gate_failures(diagnostics, list(gate_ids), float(meta.get("gate_floor", 40)))
+        bands = meta.get("verdict_bands") or {}
+        verdict = verdict_for(score, failed, float(bands.get("ready", 67)), float(bands.get("ready_with_gaps", 50)))
     return {
         "score": score,
         "maturity": maturity_for(score, meta.get("maturity_bands") or []),
         "verdict": verdict,
+        "verdict_reason": reason,
         "failed_gates": failed,
         "provisional": any(item["provisional"] for item in diagnostics),
-        "headline": _headline(verdict, score, failed),
+        "headline": _headline(verdict, score, failed, reason),
     }
 
 

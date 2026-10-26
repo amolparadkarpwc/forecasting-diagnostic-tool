@@ -50,7 +50,7 @@ def fill_template(template: str, values: dict) -> str:
         return template
 
 
-_COUNTED = {"auto_accepted", "counted_flagged", "confirmed", "resolved"}
+_COUNTED = {"auto_accepted", "counted_flagged", "confirmed", "resolved", "blocked_for_gate"}
 
 
 def check_details(diagnostic: dict, measures: dict, records: list[dict]) -> list[dict]:

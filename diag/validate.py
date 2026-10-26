@@ -75,4 +75,4 @@ def validate_results(document: dict) -> None:
         "results",
     )
     _require(document["versions"], ["pack", "engine", "python"], "versions")
-    _require(document["overall"], ["score", "maturity", "verdict", "failed_gates"], "overall")
+    _require(document["overall"], ["score", "maturity", "verdict", "verdict_reason", "failed_gates"], "overall")
