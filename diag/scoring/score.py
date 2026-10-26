@@ -422,7 +422,7 @@ def _headline(verdict: str, score, failed: list[dict], reason: str = "") -> str:
 
 def _overall(diagnostics: list[dict], pack: dict) -> dict:
     meta = pack["meta"]
-    score = overall_score(diagnostics)
+    score = overall_score(diagnostics, meta.get("area_weights") or {})
     reason = ""
     if isinstance(meta.get("verdict"), list):
         verdict, reason = verdict_for_pack(pack, diagnostics, score)
@@ -455,7 +455,7 @@ def _overall(diagnostics: list[dict], pack: dict) -> dict:
 
 def assemble_results(cfg: dict, pack: dict, inventory: list[dict], parsed: list, evidence: list[dict], measure_values: dict, *, stage: str) -> dict:
     diagnostics = score_diagnostics(pack, evidence, measure_values, include_attested=True)
-    area_order = list((pack["meta"].get("area_weights") or {}).keys())
+    area_weights = pack["meta"].get("area_weights") or {}
     causes = root_causes(diagnostics)
     for diagnostic in diagnostics:
         if diagnostic["id"] == "D42":
@@ -484,12 +484,12 @@ def assemble_results(cfg: dict, pack: dict, inventory: list[dict], parsed: list,
         "artifacts_shared": shared,
         "artifacts_not_shared": missing,
         "diagnostics": diagnostics,
-        "areas": area_rollup(diagnostics, area_order),
+        "areas": area_rollup(diagnostics, area_weights),
         "overall": overall,
         "coverage": summarise(diagnostics),
         "measured_view": {
             "overall": measured_overall,
-            "areas": area_rollup(measured, area_order),
+            "areas": area_rollup(measured, area_weights),
             "diagnostics": {
                 item["id"]: {
                     "score": item["score"],

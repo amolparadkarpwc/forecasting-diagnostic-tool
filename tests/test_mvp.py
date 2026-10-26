@@ -27,6 +27,7 @@ from diag.intake.safety import assess_model  # noqa: E402
 from diag.intake.unpack import extract_zip  # noqa: E402
 from diag.rules.derived import rate_above  # noqa: E402
 from diag.runner import init_engagement, report_engagement, run_engagement  # noqa: E402
+from diag.scoring.rollup import area_rollup, overall_score  # noqa: E402
 
 
 def _scores(results: dict) -> dict:
@@ -428,6 +429,150 @@ class DiagnosticTests(unittest.TestCase):
                 if str(record["source"]["file"]).endswith("transcript.docx")
             ]
             self.assertTrue(all(record["evidence_level"] == "Attested" for record in hits))
+
+    def test_client_artifacts_are_sorted_into_input_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            dump = engagement / "client_artifacts"
+            (dump / "nested").mkdir()
+            (dump / "nested" / "train.py").write_text("import mlflow\n", encoding="utf-8")
+            (dump / "meeting.vtt").write_text(
+                "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello from the meeting\n",
+                encoding="utf-8",
+            )
+            (dump / "chart.png").write_bytes(_png_1x1())
+            archive = dump / "bundle.zip"
+            with zipfile.ZipFile(archive, "w") as handle:
+                handle.writestr("model.yaml", "backtest:\n  rolling_origin: true\n")
+            self.assertTrue((engagement / "input" / "code").is_dir())
+            run_engagement(engagement, PACK)
+            self.assertTrue((dump / "nested" / "train.py").is_file())
+            self.assertTrue((engagement / "input" / "code" / "nested" / "train.py").is_file())
+            self.assertTrue((engagement / "input" / "transcripts" / "meeting.vtt").is_file())
+            self.assertTrue((engagement / "input" / "images" / "chart.png").is_file())
+            self.assertTrue((engagement / "input" / "config" / "bundle.zip" / "model.yaml").is_file())
+            self.assertFalse((engagement / "input" / "other" / "bundle.zip").exists())
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            paths = {row["path"] for row in inventory}
+            self.assertIn("code/nested/train.py", paths)
+            self.assertIn("transcripts/meeting.vtt", paths)
+            self.assertIn("images/chart.png", paths)
+            self.assertIn("config/bundle.zip/model.yaml", paths)
+
+    def test_csv_role_comes_from_columns_not_the_file_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            dump = engagement / "client_artifacts"
+            (dump / "Q4_extract_final.csv").write_text(
+                "sku,month,qty\nA,2024-01-01,10\nA,2024-02-01,12\n",
+                encoding="utf-8",
+            )
+            run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            row = next(item for item in inventory if item["path"].endswith("Q4_extract_final.csv"))
+            self.assertEqual(row["data_format"], "sales_history")
+            self.assertTrue(row["path"].startswith("data/"))
+            self.assertNotIn("sales_history", row["path"])
+
+    def test_every_file_kind_is_recognised_without_its_name(self) -> None:
+        samples = {
+            "build_features.notes": (
+                "import pandas as pd\n\ndef build(df):\n    return df\n",
+                "python",
+                "code",
+            ),
+            "price_join.notes": (
+                "SELECT s.series_id\nFROM sales s\nJOIN price p ON p.id = s.id\n",
+                "sql",
+                "code",
+            ),
+            "model_settings.notes": (
+                "backtest:\n  rolling_origin: true\n",
+                "yaml",
+                "config",
+            ),
+            "horizon_settings.notes": (
+                'horizons = [1, 3]\nprimary = "WAPE"\n',
+                "toml",
+                "config",
+            ),
+            "weekly_orders.notes": (
+                "sku,month,qty\nA,2024-01-01,10\nA,2024-02-01,12\n",
+                "csv",
+                "data",
+            ),
+            "job_history.notes": (
+                "2024-01-15T02:00:00Z job=forecast status=SUCCESS\n"
+                "2024-02-15T02:00:01Z job=forecast status=FAILED\n",
+                "log",
+                "log",
+            ),
+            "forecast_script": (
+                "library(forecast)\nmodel <- auto.arima(series)\n",
+                "r",
+                "code",
+            ),
+        }
+        for name, (text, detected, family) in samples.items():
+            found = identify(Path(name), text.encode("utf-8"))
+            self.assertEqual(found[:2], (detected, family), name)
+
+        notebook = json.dumps(
+            {"nbformat": 4, "nbformat_minor": 5, "metadata": {}, "cells": [{"cell_type": "code", "source": ["x = 1\n"]}]}
+        )
+        self.assertEqual(identify(Path("training_notes.json"), notebook.encode("utf-8"))[:2], ("notebook", "code"))
+        self.assertEqual(identify(Path("slide.bin"), _png_1x1())[:2], ("png", "document"))
+        self.assertEqual(
+            identify(Path("weights.bin"), pickle.dumps({"model": 1}, protocol=4))[:2],
+            ("pickle", "model"),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            dump = engagement / "client_artifacts"
+            for name, (text, _detected, _family) in samples.items():
+                (dump / name).write_text(text, encoding="utf-8")
+            (dump / "slide.bin").write_bytes(_png_1x1())
+            (dump / "weights.bin").write_bytes(pickle.dumps({"model": 1}, protocol=4))
+            run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            by_name = {Path(row["path"]).name: row for row in inventory}
+            self.assertTrue(by_name["build_features.notes"]["path"].startswith("code/"))
+            self.assertTrue(by_name["price_join.notes"]["path"].startswith("code/"))
+            self.assertTrue(by_name["forecast_script"]["path"].startswith("code/"))
+            self.assertTrue(by_name["model_settings.notes"]["path"].startswith("config/"))
+            self.assertTrue(by_name["horizon_settings.notes"]["path"].startswith("config/"))
+            self.assertTrue(by_name["weekly_orders.notes"]["path"].startswith("data/"))
+            self.assertEqual(by_name["weekly_orders.notes"]["data_format"], "sales_history")
+            self.assertTrue(by_name["job_history.notes"]["path"].startswith("logs/"))
+            self.assertTrue(by_name["slide.bin"]["path"].startswith("images/"))
+            self.assertTrue(by_name["weights.bin"]["path"].startswith("models/"))
+            self.assertEqual(by_name["weights.bin"]["detected_type"], "pickle")
+            self.assertIn(by_name["weights.bin"]["status"], {"quarantined", "manual_review"})
+
+    def test_areas_without_diagnostics_count_as_zero(self) -> None:
+        diagnostics = [
+            {"id": "D08", "area": "Data", "points": 5, "score": 50, "applicable": True, "tier": "core"},
+            {"id": "D43", "area": "Data", "points": 6, "score": 70, "applicable": True, "tier": "core"},
+        ]
+        weights = {
+            "Data": 25,
+            "Feature engineering": 25,
+            "Model training": 15,
+            "Validation & backtesting": 20,
+            "Deployment & monitoring": 15,
+        }
+        areas = {area["name"]: area for area in area_rollup(diagnostics, weights)}
+        self.assertEqual(areas["Data"]["score"], 60.91)
+        self.assertEqual(areas["Feature engineering"]["score"], 0.0)
+        self.assertEqual(areas["Feature engineering"]["status"], "No evidence")
+        self.assertEqual(areas["Model training"]["score"], 0.0)
+        self.assertEqual(areas["Validation & backtesting"]["score"], 0.0)
+        self.assertEqual(areas["Deployment & monitoring"]["score"], 0.0)
+        self.assertEqual(overall_score(diagnostics, weights), 15.23)
 
 
 if __name__ == "__main__":

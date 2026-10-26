@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"diag {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    init = commands.add_parser("init", help="Create input/, work/, and output/ for an engagement")
+    init = commands.add_parser("init", help="Create client_artifacts/, input/, work/, and output/")
     init.add_argument("engagement", help="Engagement folder")
 
     run = commands.add_parser("run", help="Intake, evidence, and provisional scores")
@@ -51,7 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init":
             path = init_engagement(_path(args.engagement))
             print(f"Initialised {path}")
-            print("Put client files in input/, then run: python -m diag run <engagement> --pack pack")
+            print("Put every client file in client_artifacts/, then run: python -m diag run <engagement> --pack pack")
+            print("The run sorts them into input/ by type.")
             return 0
         if args.command == "run":
             engagement = _path(args.engagement)

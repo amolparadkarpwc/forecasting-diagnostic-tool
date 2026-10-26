@@ -185,15 +185,15 @@ def _area_snapshot(areas: list[dict], rows: list[dict]) -> dict:
     for phase in PHASES:
         area = by_name.get(phase["name"])
         items = grouped.get(phase["name"]) or []
-        if not items or area is None or area.get("score") is None:
+        if area is None or area.get("score") is None:
             snapshot[phase["k"]] = {"score": None, "assessedShare": 0, "points": 0}
             continue
-        points = sum(item["points"] for item in items) or 1.0
+        points = sum(item["points"] for item in items)
         assessed = sum(item["points"] for item in items if item["score"] is not None)
         snapshot[phase["k"]] = {
             "score": area.get("score"),
-            "assessedShare": assessed / points,
-            "points": sum(item["points"] for item in items),
+            "assessedShare": (assessed / points) if points else 0,
+            "points": float(area.get("points") or 0),
         }
     return snapshot
 
@@ -293,8 +293,9 @@ def _footer(results: dict) -> str:
     python = versions.get("python") or "—"
     return (
         f"Pack {pack} · engine {engine} · Python {python}. "
-        "Overall score is the points-weighted average of the diagnostics in this knowledge pack. "
-        "Missing evidence counts as zero. Checks outside the pack are shown as not assessed and are not scored. "
+        "Overall score weights each pack area by its points. "
+        "An area with no diagnostics, and a diagnostic with no evidence, counts as zero. "
+        "Checks outside the pack are shown as not assessed and are not scored. "
         "Thresholds are placeholders until the SME workshop. "
         "Measured evidence only excludes attested records."
     )

@@ -30,9 +30,10 @@ def write(path: Path, text: str) -> None:
 
 
 def build_tables() -> None:
-    sales_path = OUT / "data" / "sales_history.csv"
-    forecast_path = OUT / "data" / "past_forecasts.csv"
-    sales_path.parent.mkdir(parents=True, exist_ok=True)
+    # Names are deliberately not the table roles. Intake classifies by columns.
+    OUT.mkdir(parents=True, exist_ok=True)
+    sales_path = OUT / "monthly_demand_extract.csv"
+    forecast_path = OUT / "forecast_run_export.csv"
     sales_rows = []
     forecast_rows = []
     for series in ("A", "B"):
@@ -71,7 +72,7 @@ def build_tables() -> None:
 
 def build_code() -> None:
     write(
-        OUT / "code" / "features.py",
+        OUT / "features.py",
         '''"""Feature build for the demand model."""
 import warnings
 
@@ -97,13 +98,13 @@ def fit_models(models, features, target):
 ''',
     )
     write(
-        OUT / "code" / "features.sql",
+        OUT / "features.sql",
         """SELECT s.series_id, s.week_start, p.price
 FROM sales s
 JOIN price_actuals p ON p.week_start >= s.week_start
 """,
     )
-    write(OUT / "code" / "broken.py", "def (\n")
+    write(OUT / "broken.py", "def (\n")
     notebook = {
         "nbformat": 4,
         "nbformat_minor": 5,
@@ -119,12 +120,12 @@ JOIN price_actuals p ON p.week_start >= s.week_start
             },
         ],
     }
-    write(OUT / "code" / "train.ipynb", json.dumps(notebook, indent=2) + "\n")
+    write(OUT / "train.ipynb", json.dumps(notebook, indent=2) + "\n")
 
 
 def build_docs() -> None:
     write(
-        OUT / "docs" / "methodology.md",
+        OUT / "methodology.md",
         """# Forecast methodology
 
 We measure accuracy with WAPE and bias for AcmeForecast (owner Jane Doe) at horizons of 1 and 3 months.
@@ -133,7 +134,7 @@ Validation checks run before each forecast.
 """,
     )
     write(
-        OUT / "config" / "settings.yaml",
+        OUT / "settings.yaml",
         """client: AcmeForecast
 owner: Jane Doe
 metrics:
@@ -147,7 +148,7 @@ model:
 """,
     )
     write(
-        OUT / "logs" / "pipeline.log",
+        OUT / "pipeline.log",
         """2024-01-15T02:00:00Z job=forecast status=SUCCESS duration=120
 2024-02-15T02:00:01Z job=forecast status=FAILED duration=12 error=timeout
 2024-03-15T02:00:02Z job=forecast status=SUCCESS duration=118
@@ -157,23 +158,21 @@ model:
     write(OUT / "notes.txt", "Runbook excerpt for the monthly forecast.\n")
     write(OUT / "notes_copy.txt", "Runbook excerpt for the monthly forecast.\n")
     write(OUT / "broken.json", "{ this is not json\n")
-    (OUT / "docs").mkdir(parents=True, exist_ok=True)
-    (OUT / "docs" / "brief.pdf").write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n")
-    (OUT / "models").mkdir(parents=True, exist_ok=True)
-    (OUT / "models" / "candidate.onnx").write_bytes(b"onnx-mvp-placeholder\n")
+    (OUT / "brief.pdf").write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n")
+    (OUT / "candidate.onnx").write_bytes(b"onnx-mvp-placeholder\n")
 
     from docx import Document
 
     document = Document()
     document.add_heading("Model card", level=1)
     document.add_paragraph("Primary metric is WAPE for AcmeForecast, prepared by Jane Doe.")
-    document.save(OUT / "docs" / "model_card.docx")
+    document.save(OUT / "model_card.docx")
 
     class Marker:
         def __reduce__(self):
             return (os.system, ("echo diagnostic-mvp",))
 
-    (OUT / "models" / "suspicious.pkl").write_bytes(pickle.dumps(Marker(), protocol=4))
+    (OUT / "suspicious.pkl").write_bytes(pickle.dumps(Marker(), protocol=4))
 
     with zipfile.ZipFile(OUT / "bundle.zip", "w") as handle:
         handle.writestr("supplement.txt", "Scheduler note: the monthly forecast job is forecast_monthly.\n")

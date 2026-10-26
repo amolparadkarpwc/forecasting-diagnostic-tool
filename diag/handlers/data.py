@@ -89,6 +89,8 @@ def parse_data(path: Path, record: dict) -> ParsedArtifact:
     if frame.empty or len(frame.columns) == 0:
         raise ValueError("CSV has no rows")
     data_format, standard = standardise(frame)
+    if data_format:
+        record["data_format"] = data_format
     artifact = ParsedArtifact(
         artifact_id=record["artifact_id"],
         rel_path=record["path"],

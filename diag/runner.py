@@ -8,6 +8,7 @@ import yaml
 
 from diag.intake.inventory import write_inventory
 from diag.intake.pipeline import collect
+from diag.intake.sort import ensure_layout
 from diag.outputs.dashboard import render_dashboard
 from diag.outputs.mask import mask_obj
 from diag.packload import load_pack
@@ -21,9 +22,9 @@ from diag import __version__
 
 def init_engagement(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
-    (path / "input").mkdir(exist_ok=True)
     (path / "work").mkdir(exist_ok=True)
     (path / "output").mkdir(exist_ok=True)
+    ensure_layout(path)
     config_path = path / "engagement.yaml"
     if not config_path.exists():
         config_path.write_text(
@@ -84,7 +85,7 @@ def _apply_unconfirmed_stage(inventory: list[dict], pack: dict) -> None:
         record["data_stage"] = default_stage
         record["data_stage_hints"] = []
         record["data_stage_flag"] = flag
-        if record.get("detected_type") == "sales_history":
+        if record.get("data_format") == "sales_history" or record.get("detected_type") == "sales_history":
             record["absent_row_semantics"] = default_absent
             record["absent_row_basis"] = "none"
 

@@ -12,6 +12,7 @@ from diag.intake.dedupe import assign_ids, mark_duplicates
 from diag.intake.identify import identify, is_archive
 from diag.intake.inventory import empty_record
 from diag.intake.safety import assess_model
+from diag.intake.sort import sort_client_artifacts
 from diag.intake.unpack import extract_gzip, extract_tar, extract_zip
 from diag.util import MAX_BYTES, posix_path, sanitize_error, sha256_bytes
 
@@ -80,7 +81,8 @@ def _record_for_path(rel: str, abs_path: Path | None, data: bytes | None, reason
 
 
 def collect(engagement: Path, allowlist: list[str]) -> tuple[list[dict], list[ParsedArtifact]]:
-    """Inventory input/ and parse every readable file in isolation."""
+    """Sort client_artifacts/ into input/, then inventory and parse every readable file."""
+    sort_client_artifacts(engagement)
     root = engagement / "input"
     if not root.exists():
         raise FileNotFoundError(f"no input folder at {root}")
