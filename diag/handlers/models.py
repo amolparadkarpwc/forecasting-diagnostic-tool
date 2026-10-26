@@ -1,4 +1,4 @@
-"""Model handler. Records the safety-scan reason and never unpickles the file."""
+"""Model handler. Intake has already loaded or rejected the file."""
 
 from __future__ import annotations
 

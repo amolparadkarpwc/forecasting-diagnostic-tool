@@ -91,7 +91,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertFalse(rate_above(0.1, 0.2))
 
     def test_source_does_not_unpickle_or_execute(self) -> None:
-        banned = ("pickle.loads", "pickle.load(", "exec(", "eval(")
+        banned = ("pickle.loads", "pickle.load(", "exec(", "eval(", "joblib.load", "onnxruntime")
         text = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "diag").rglob("*.py"))
         for token in banned:
             self.assertNotIn(token, text)
@@ -182,10 +182,11 @@ class DiagnosticTests(unittest.TestCase):
             self.assertTrue(any(row["status"] == "duplicate" for row in inventory))
             self.assertTrue(any(row["status"] == "unreadable" for row in inventory))
             onnx = next(row for row in inventory if row["detected_type"] == "onnx")
-            self.assertEqual(onnx["status"], "manual_review")
+            self.assertEqual(onnx["status"], "unreadable")
             self.assertIn("ONNX", onnx["reason"])
             pdf = next(row for row in inventory if row["detected_type"] == "pdf")
-            self.assertEqual(pdf["status"], "manual_review")
+            self.assertIn(pdf["status"], {"readable", "unreadable"})
+            self.assertNotIn("not enabled", pdf["reason"])
             output_text = "\n".join(
                 path.read_text(encoding="utf-8") for path in (engagement / "output").iterdir() if path.suffix != ".html"
             )
@@ -551,7 +552,8 @@ class DiagnosticTests(unittest.TestCase):
             self.assertTrue(by_name["slide.bin"]["path"].startswith("images/"))
             self.assertTrue(by_name["weights.bin"]["path"].startswith("models/"))
             self.assertEqual(by_name["weights.bin"]["detected_type"], "pickle")
-            self.assertIn(by_name["weights.bin"]["status"], {"quarantined", "manual_review"})
+            self.assertEqual(by_name["weights.bin"]["status"], "readable")
+            self.assertIn("not called", by_name["weights.bin"]["reason"])
 
     def test_areas_without_diagnostics_count_as_zero(self) -> None:
         diagnostics = [
@@ -573,6 +575,122 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(areas["Validation & backtesting"]["score"], 0.0)
         self.assertEqual(areas["Deployment & monitoring"]["score"], 0.0)
         self.assertEqual(overall_score(diagnostics, weights), 15.23)
+
+    def test_allowlisted_pickle_is_loaded_and_not_called(self) -> None:
+        import datetime
+
+        from diag.intake.safety import load_allowlisted
+
+        class Boom:
+            def __reduce__(self):
+                return (eval, ("1+1",))
+
+        payload = pickle.dumps(Boom(), protocol=4)
+        with self.assertRaises(pickle.UnpicklingError):
+            load_allowlisted(payload, ["builtins"])
+        stamp = datetime.datetime(2024, 1, 15)
+        loaded = load_allowlisted(pickle.dumps(stamp, protocol=4), ["datetime"])
+        self.assertEqual(loaded, stamp)
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            (engagement / "input" / "when.pkl").write_bytes(pickle.dumps(stamp, protocol=4))
+            run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            row = next(item for item in inventory if item["path"].endswith("when.pkl"))
+            self.assertEqual(row["status"], "readable")
+            self.assertIn("datetime.datetime", row["reason"])
+            self.assertIn("not called", row["reason"])
+
+    def test_onnx_graph_is_inspected_without_execution(self) -> None:
+        def varint(value: int) -> bytes:
+            out = bytearray()
+            while True:
+                piece = value & 0x7F
+                value >>= 7
+                out.append(piece | 0x80 if value else piece)
+                if not value:
+                    return bytes(out)
+
+        def field(number: int, wire: int, payload: bytes) -> bytes:
+            return varint((number << 3) | wire) + payload
+
+        def text(number: int, value: str) -> bytes:
+            raw = value.encode("utf-8")
+            return field(number, 2, varint(len(raw)) + raw)
+
+        def message(number: int, payload: bytes) -> bytes:
+            return field(number, 2, varint(len(payload)) + payload)
+
+        node = text(1, "x") + text(2, "y") + text(4, "Identity")
+        graph = message(1, node) + message(11, text(1, "x")) + message(12, text(1, "y"))
+        model = field(1, 0, varint(8)) + text(2, "onnx-test") + message(7, graph)
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            (engagement / "client_artifacts" / "forecast_graph.bin").write_bytes(model)
+            run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            row = next(item for item in inventory if item["path"].endswith("forecast_graph.bin"))
+            self.assertEqual(row["detected_type"], "onnx")
+            self.assertEqual(row["status"], "readable")
+            self.assertIn("Identity", row["reason"])
+            self.assertIn("not executed", row["reason"])
+            self.assertTrue(row["path"].startswith("models/"))
+
+    def test_pdf_excel_and_parquet_are_read(self) -> None:
+        import pandas as pd
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+        frame = pd.DataFrame({"sku": ["A", "A"], "month": ["2024-01-01", "2024-02-01"], "qty": [10, 12]})
+        with tempfile.TemporaryDirectory() as tmp:
+            engagement = Path(tmp) / "eng"
+            init_engagement(engagement)
+            dump = engagement / "client_artifacts"
+            writer = PdfWriter()
+            page = writer.add_blank_page(width=300, height=144)
+            page[NameObject("/Resources")] = DictionaryObject(
+                {
+                    NameObject("/Font"): DictionaryObject(
+                        {
+                            NameObject("/F1"): DictionaryObject(
+                                {
+                                    NameObject("/Type"): NameObject("/Font"),
+                                    NameObject("/Subtype"): NameObject("/Type1"),
+                                    NameObject("/BaseFont"): NameObject("/Helvetica"),
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+            contents = DecodedStreamObject()
+            contents.set_data(b"BT /F1 12 Tf 20 100 Td (The forecast target is units sold.) Tj ET")
+            page[NameObject("/Contents")] = contents
+            with (dump / "brief.pdf").open("wb") as handle:
+                writer.write(handle)
+            frame.to_excel(dump / "orders_extract.bin.xlsx", index=False)
+            frame.to_parquet(dump / "orders_extract.bin", index=False)
+            run_engagement(engagement, PACK)
+            inventory = json.loads((engagement / "output" / "inventory.json").read_text(encoding="utf-8"))
+            by_name = {Path(row["path"]).name: row for row in inventory}
+            self.assertEqual(by_name["brief.pdf"]["detected_type"], "pdf")
+            self.assertEqual(by_name["brief.pdf"]["status"], "readable")
+            self.assertTrue(by_name["brief.pdf"]["path"].startswith("documents/"))
+            self.assertEqual(by_name["orders_extract.bin.xlsx"]["data_format"], "sales_history")
+            self.assertTrue(by_name["orders_extract.bin.xlsx"]["path"].startswith("data/"))
+            self.assertEqual(by_name["orders_extract.bin"]["detected_type"], "parquet")
+            self.assertEqual(by_name["orders_extract.bin"]["data_format"], "sales_history")
+            self.assertTrue(by_name["orders_extract.bin"]["path"].startswith("data/"))
+            evidence = json.loads((engagement / "output" / "evidence_log.json").read_text(encoding="utf-8"))
+            pdf_hits = [
+                record
+                for record in evidence["records"]
+                if str(record["source"]["file"]).endswith("brief.pdf")
+            ]
+            self.assertTrue(pdf_hits)
+            self.assertTrue(all(record["evidence_level"] == "Attested" for record in pdf_hits))
 
 
 if __name__ == "__main__":

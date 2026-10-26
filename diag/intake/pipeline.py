@@ -17,10 +17,7 @@ from diag.intake.unpack import extract_gzip, extract_tar, extract_zip
 from diag.util import MAX_BYTES, posix_path, sanitize_error, sha256_bytes
 
 UNSUPPORTED = {
-    "pdf": "PDF parsing is not enabled in this MVP",
     "pptx": "PowerPoint parsing is not enabled in this MVP",
-    "xlsx": "Excel parsing is not enabled in this MVP",
-    "parquet": "Parquet parsing is not enabled in this MVP",
 }
 
 

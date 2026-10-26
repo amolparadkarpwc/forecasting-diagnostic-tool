@@ -54,6 +54,16 @@ def _read_docx(path: Path) -> str:
     return "\n".join(lines)
 
 
+def _read_pdf(path: Path) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        raise RuntimeError("pypdf is not installed") from exc
+    reader = PdfReader(str(path))
+    pages = [(page.extract_text() or "") for page in reader.pages]
+    return "\n".join(pages).replace("\r\n", "\n").replace("\r", "\n")
+
+
 def parse_document(path: Path, record: dict) -> ParsedArtifact | None:
     detected = str(record.get("detected_type") or "txt")
     if detected in IMAGE_TYPES:
@@ -61,6 +71,11 @@ def parse_document(path: Path, record: dict) -> ParsedArtifact | None:
     if detected == "docx":
         text = _read_docx(path).replace("\r\n", "\n").replace("\r", "\n")
         encoding = ""
+    elif detected == "pdf":
+        text = _read_pdf(path)
+        encoding = ""
+        if not text.strip() and record.get("status") == "readable":
+            record["reason"] = "PDF contained no extractable text"
     else:
         text, encoding = read_text(path)
         record["encoding"] = encoding

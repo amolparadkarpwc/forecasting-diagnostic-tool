@@ -2,7 +2,7 @@
 
 A deterministic diagnostic for a forecasting solution a client already runs. It reads the files they share, records evidence, scores a small knowledge pack, and writes a single-file HTML dashboard.
 
-This is a fixed-deadline slice of the full build spec, not the 10-week product. There is no LLM and no network call at runtime. Client Python is parsed, never executed. Model files are scanned with `pickletools` and never unpickled.
+This is a fixed-deadline slice of the full build spec, not the 10-week product. There is no LLM and no network call at runtime. Client Python is parsed, never executed. A pickle or joblib file is loaded only after a `pickletools` scan and only through a restricted unpickler that accepts the allowlist; the model is not called. Anything outside the allowlist is quarantined. ONNX files are parsed and not executed. PDF, Excel, and Parquet are read for text or tables.
 
 ## Run the demo
 
@@ -39,7 +39,7 @@ The sample engagement mixes sound and weak artifacts:
 - Python that shifts a feature forward and swallows fit errors, plus a SQL join on a future date
 - A scheduler log with failed runs
 - A config and a short methodology note that name WAPE, bias, and a seasonal naive baseline
-- A pickle that references an OS module (quarantined), a placeholder ONNX file, a fake PDF, a broken Python file, and a broken JSON file
+- A pickle that references an OS module (quarantined), a placeholder ONNX file that does not parse, a stub PDF, a broken Python file, and a broken JSON file
 - A zip with one safe member, and a duplicate text file
 
 One bad file does not stop the run. `AcmeForecast` and `Jane Doe` are on the masking list created by `diag init`, and those strings are replaced with `[REDACTED]` in outputs.
@@ -66,7 +66,7 @@ Useful outputs, written under the engagement `output/` folder:
 
 - The other diagnostics beyond D08, D14, D23, D34, D41, D42, and D43
 - Review-sheet export and import (uncertain matches are left as `needs_review` and are not scored)
-- Unpickling allowlisted models, ONNX inspection, PDF, Excel, and Parquet
+- PowerPoint parsing
 - Incremental re-runs, targeted-request ranking beyond the gap list, what-if editing, and a separate coverage tab
 - Family-specific scoring branches (a family is detected and stored, and every included diagnostic stays applicable)
 - Practitioner sign-off and knowledge-pack feedback

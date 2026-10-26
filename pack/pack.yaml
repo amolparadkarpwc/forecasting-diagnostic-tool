@@ -12,6 +12,7 @@ version_notes:
 vocabularies:
   - vocab/data_validation.yaml
   - vocab/target_definition.yaml
+  - vocab/model_file_allowlist.yaml
 shared_steps:
   - shared/data_stage.yaml
   - shared/zero_classification.yaml
