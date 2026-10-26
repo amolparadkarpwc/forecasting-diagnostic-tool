@@ -1,4 +1,4 @@
-# Forecasting data and model diagnostic (MVP)
+# Forecasting diagnostic tool (MVP)
 
 A deterministic diagnostic for a forecasting solution a client already runs. It reads the files they share, records evidence, scores a small knowledge pack, and writes a single-file HTML dashboard.
 
