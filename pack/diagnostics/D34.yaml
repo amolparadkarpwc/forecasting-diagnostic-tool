@@ -42,11 +42,22 @@ signals:
 scoring:
   - {when_all: [baseline_mentioned], score: 55}
   - {otherwise: no_evidence}
-finding_template: "Margin of model WAPE over seasonal naive is {margin_over_seasonal_naive_num}. Positive means the model is better."
+checks:
+  - id: margin
+    name: Margin over seasonal naive
+    measure: margin_over_seasonal_naive
+    when_measured: "The model's WAPE beats a seasonal naive by {margin_over_seasonal_naive_num} (naive WAPE minus model WAPE). Positive means the model is better on the same origins."
+    when_missing: "The margin was not computed. It needs a sales history long enough for one season and a past-forecast archive on the same series."
+  - id: baseline_named
+    name: Baseline named as a scored candidate
+    signal: baseline_mentioned
+    when_found: "A seasonal naive or naive baseline is mentioned. A mention that only describes a runtime fallback is not, by itself, evidence that the baseline was scored. {fact}"
+    when_missing: "No seasonal-naive or naive-baseline benchmark was found in the documents, transcripts, or notes."
 recommendations:
   margin_over_seasonal_naive: R-VAL-02
   baseline_mentioned: R-VAL-02
 gap_request: "A backtest that scores the chosen model and a seasonal naive on the same origins."
 review_checklist:
   - "Is the naive forecast one of the scored candidates, not only a runtime fallback?"
-version_notes: "0.1.0: MVP computes the WAPE margin over a seasonal naive. A mention that is only a fallback is left for review."
+  - "Are the model and the naive scored on the same origins and the same actuals?"
+version_notes: "0.2.0: the measured margin and the written claim of a benchmark are reported separately."

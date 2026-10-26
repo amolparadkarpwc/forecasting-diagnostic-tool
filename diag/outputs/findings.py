@@ -50,9 +50,51 @@ def fill_template(template: str, values: dict) -> str:
         return template
 
 
+_COUNTED = {"auto_accepted", "counted_flagged", "confirmed", "resolved"}
+
+
+def check_details(diagnostic: dict, measures: dict, records: list[dict]) -> list[dict]:
+    """One result per sub-check. A diagnostic is detailed when the pack lists `checks`."""
+    values = _display_values(measures, records)
+    by_signal: dict[str, dict] = {}
+    for record in records:
+        signal_id = record.get("signal_id")
+        if signal_id and signal_id not in by_signal:
+            by_signal[signal_id] = record
+    details = []
+    for check in diagnostic.get("checks") or []:
+        name = check.get("name") or check.get("id") or "Check"
+        measure = check.get("measure")
+        signal = check.get("signal")
+        if measure:
+            if measure in (measures or {}):
+                state = "measured"
+                text = fill_template(check.get("when_measured") or "", values)
+            else:
+                state = "missing"
+                text = check.get("when_missing") or "This was not measured from the files shared."
+        elif signal:
+            record = by_signal.get(signal)
+            if record is None:
+                state = "missing"
+                text = check.get("when_missing") or "This was not found in the files shared."
+            else:
+                state = "found" if record.get("status") in _COUNTED else "review"
+                fact = record.get("fact") or ""
+                text = fill_template(check.get("when_found") or "", {**values, "fact": fact})
+        else:
+            state = "review"
+            text = check.get("text") or ""
+        details.append({"id": check.get("id") or name, "name": name, "state": state, "text": text})
+    return details
+
+
 def finding_text(diagnostic: dict, score, route: str, measures: dict, records: list[dict]) -> str:
     if diagnostic.get("tier") == "synthesis":
         return ""
+    details = check_details(diagnostic, measures, records)
+    if details:
+        return " ".join(f"{item['name']}: {item['text']}" for item in details if item["text"])
     values = _display_values(measures, records)
     template = diagnostic.get("finding_template")
     if template and (score is not None or records):

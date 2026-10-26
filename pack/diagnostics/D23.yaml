@@ -51,7 +51,27 @@ signals:
 scoring:
   - {when_any: [metrics_in_config, metrics_in_docs], score: 60}
   - {otherwise: no_evidence}
-finding_template: "WAPE is {wape_pct} and absolute bias is {abs_bias_pct}."
+checks:
+  - id: wape
+    name: WAPE
+    measure: wape
+    when_measured: "WAPE on the aligned history and forecast archive is {wape_pct}. This is total absolute error divided by total actuals."
+    when_missing: "WAPE was not computed. It needs both a sales history and a past-forecast archive with series, run date, target date, and forecast."
+  - id: bias
+    name: Absolute bias
+    measure: abs_bias
+    when_measured: "Absolute bias is {abs_bias_pct} of actuals. This is the size of the net over- or under-forecast, not the direction."
+    when_missing: "Absolute bias was not computed. It uses the same history and forecast archive as WAPE."
+  - id: metric_config
+    name: Metric named in configuration
+    signal: metrics_in_config
+    when_found: "The forecast configuration names a recognised accuracy metric. {fact}"
+    when_missing: "No recognised metric name was found under the metrics, accuracy, or backtest keys."
+  - id: metric_document
+    name: Metric named in a document
+    signal: metrics_in_docs
+    when_found: "A document or transcript names a recognised accuracy metric. {fact}"
+    when_missing: "No recognised metric name was found in the documents or transcripts."
 recommendations:
   wape: R-VAL-01
   abs_bias: R-VAL-01
@@ -59,5 +79,6 @@ recommendations:
   metrics_in_docs: R-VAL-01
 gap_request: "Past forecasts (series, run date, target date, forecast) joined to actuals, or a metric definition from the config."
 review_checklist:
-  - "Is the reported metric the one the business uses to judge the forecast?"
-version_notes: "0.1.0: MVP computes WAPE and absolute bias when history and a forecast archive are both present."
+  - "Is the reported metric the one the business uses to judge the forecast, at the horizons they use?"
+  - "Does the published number match the WAPE computed here from the archive?"
+version_notes: "0.2.0: WAPE, bias, and where the metric is named are reported as separate checks."

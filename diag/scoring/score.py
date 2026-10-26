@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from diag import __version__
 from diag.outputs.findings import (
     actions_for,
+    check_details,
     d42_finding,
     finding_text,
     recommendation_ids,
@@ -127,6 +128,10 @@ def score_diagnostics(pack: dict, evidence: list[dict], measure_values: dict, *,
         score = round_score(score)
         status = status_for(score, red, amber)
         level = best_level(counted)
+        slot = measure_values.get(diagnostic["id"]) or {}
+        counted_route = route if score is not None else "none"
+        # Sub-checks see every record, including ones held for review.
+        # The score itself still uses only counted records.
         results.append(
             {
                 "id": diagnostic["id"],
@@ -138,15 +143,17 @@ def score_diagnostics(pack: dict, evidence: list[dict], measure_values: dict, *,
                 "question": diagnostic.get("question") or "",
                 "gap_request": diagnostic.get("gap_request") or "",
                 "applicable": True,
-                "route": route if score is not None else "none",
+                "route": counted_route,
                 "evidence_level": level,
                 "score": score,
                 "status": status,
                 "caps_applied": caps,
-                "provisional": _is_provisional(diagnostic, records, route if score is not None else "none"),
+                "provisional": _is_provisional(diagnostic, records, counted_route),
                 "signals": active,
                 "records": [record["record_id"] for record in counted if record.get("record_id")],
-                "finding": finding_text(diagnostic, score, route if score is not None else "none", measure_values.get(diagnostic["id"]) or {}, counted),
+                "finding": finding_text(diagnostic, score, counted_route, slot, records),
+                "detail": check_details(diagnostic, slot, records),
+                "review_checklist": list(diagnostic.get("review_checklist") or []),
                 "recommendation_ids": recommendation_ids(diagnostic, active),
                 "source_summary": source_summary(counted),
             }
@@ -174,6 +181,8 @@ def _blank(diagnostic: dict, status: str, route: str) -> dict:
         "signals": [],
         "records": [],
         "finding": "",
+        "detail": [],
+        "review_checklist": list(diagnostic.get("review_checklist") or []),
         "recommendation_ids": [],
         "source_summary": "",
     }

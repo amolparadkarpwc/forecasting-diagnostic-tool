@@ -658,7 +658,7 @@ function renderSelected() {
   el.innerHTML = `<div class="sel-head"><div><h2>${c.id} ${esc(c.name)}</h2><div class="kl">${PHN[c.ph].name} · ${c.tier === "C" ? "Core" : "Supporting"} check</div></div>
       <button type="button" class="linkbtn" id="backToFindings">Back to all findings</button></div>
     <div class="sel-score"><div><div class="kl">Score</div><div class="kv">${sc}</div></div><div><div class="kl">Evidence</div><div class="kv" style="font-size:16px">${evTxt}</div></div>${e !== "NA" ? `<div><div class="kl">Points</div><div class="kv" style="font-size:16px">${s === null ? 0 : fmt1(p * s / 100)} of ${fmt1(p)}</div></div>` : ""}</div>
-    <dl><dt>What it checks</dt><dd>${esc(DESC[c.id] || "")}</dd><dt>Finding</dt><dd>${esc(c.f)}</dd><dt>Source</dt><dd>${esc(SRC[c.id] || "–")}</dd>
+    <dl><dt>What it checks</dt><dd>${esc(DESC[c.id] || "")}</dd>${(c.detail || []).map(d => `<dt>${esc(d.name)}</dt><dd>${esc(d.text)}</dd>`).join("")}${(c.review || []).length ? `<dt>Practitioner review</dt><dd>${esc((c.review || []).join(" "))}</dd>` : ""}<dt>Source</dt><dd>${esc(SRC[c.id] || "–")}</dd>
       <dt>Recommendation</dt><dd>${esc(c.rec)}</dd><dt>Target score</dt><dd>${tgt}</dd></dl>`;
   document.getElementById("backToFindings").addEventListener("click", () => { showTab("t-sum"); document.getElementById("findings").scrollIntoView({ block: "start" }); });
 }

@@ -23,9 +23,22 @@ signals:
 scoring:
   - {when_all: [stockout_handling], score: 60}
   - {otherwise: no_evidence}
+checks:
+  - id: stockouts
+    name: Stockouts and lost sales
+    signal: stockout_handling
+    when_found: "A document or transcript mentions stockouts or lost sales. A mention is not confirmation that the correction is applied to the training history. {fact}"
+    when_missing: "No mention of stockouts or lost sales was found. Absence is not proof the correction is missing."
+  - id: returns
+    name: Returns and cancellations
+    text: "Confirm returns and cancellations are removed from demand, or kept for an explicit reason. This check is not inferred from a keyword."
+  - id: flags
+    name: Stockout flags on the history
+    text: "Confirm a stockout flag exists at series and date, and that flagged periods are not treated as zero demand. A flag file was not scored in this pack version."
 recommendations:
   stockout_handling: R-DATA-02
 gap_request: "The demand definition, including how stockouts, returns, and cancellations are treated, plus any stockout flags."
 review_checklist:
-  - "Has a practitioner confirmed that lost sales are corrected, not only mentioned?"
-version_notes: "0.1.0: stub. A mention is left for review and does not score on its own."
+  - "Has a practitioner confirmed that lost sales are corrected in the training history, not only mentioned in a document?"
+  - "Are returns and cancellations removed before the model sees the series?"
+version_notes: "0.2.0: target definition is reported as stockouts, returns, and flags. A mention still does not score on its own."
