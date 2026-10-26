@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"diag {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    init = commands.add_parser("init", help="Create input/, work/, and output/ for an engagement")
+    init = commands.add_parser("init", help="Create client_artifacts/, input/, work/, and output/")
     init.add_argument("engagement", help="Engagement folder")
 
     run = commands.add_parser("run", help="Intake, evidence, and provisional scores")
@@ -50,7 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init":
             path = init_engagement(_path(args.engagement))
             print(f"Initialised {path}")
-            print("Put client files in input/, then run: python -m diag run <engagement> --pack pack")
+            print("Put every client file in client_artifacts/, then run: python -m diag run <engagement> --pack pack")
+            print("The run sorts them into input/ by type.")
             return 0
         if args.command == "run":
             engagement = _path(args.engagement)
@@ -74,6 +76,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "test":
             import unittest
 
+            checker = Path(__file__).resolve().parents[1] / "pack" / "tools" / "check_pack.py"
+            if checker.exists():
+                completed = subprocess.run([sys.executable, str(checker)], check=False)
+                if completed.returncode != 0:
+                    return completed.returncode
             suite = unittest.defaultTestLoader.discover("tests")
             outcome = unittest.TextTestRunner(verbosity=2).run(suite)
             return 0 if outcome.wasSuccessful() else 1

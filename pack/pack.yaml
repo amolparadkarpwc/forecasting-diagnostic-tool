@@ -1,41 +1,111 @@
-name: forecast-diagnostic-mvp
-version: 0.1.0
-release_date: "2026-10-14"
-owner: mvp
+# Knowledge pack manifest
+# Values marked "# placeholder" are set at the SME threshold workshop. They live here, never in code.
+
+name: forecasting-diagnostic-pack
+version: 0.5.0
+release_date: null
+owner: TBC                        # one named practitioner approves every change
+version_notes:
+  - "0.5.0 (26 Oct 2026): D43 added. Stockouts and lost sales are out of scope by decision (pack.stockouts); D43 now checks that the target is defined once and used consistently. Gate trips now need a listed trigger (entry gate_policy); a trigger awaiting review gives 'Readiness not confirmed'."
+  - "0.4.0 (26 Oct 2026): data-area design agreed. Combination rule (lower of condition and control); data-stage tag and absent-row meaning at Gate 1; shared zero classification; gate semantics with 'Readiness not confirmed'. First full data entry: D08."
+
 vocabularies:
-  - metrics
-  - model_file_allowlist
+  - vocab/data_validation.yaml
+  - vocab/target_definition.yaml
+  - vocab/model_file_allowlist.yaml
+shared_steps:
+  - shared/data_stage.yaml
+  - shared/zero_classification.yaml
 diagnostics:
-  - D08
-  - D43
-  - D14
-  - D23
-  - D34
-  - D41
-  - D42
-gate_floor: 40
-readiness_cutoff: 0.5
-attested_cap: off
-verdict_bands:
-  ready: 67
-  ready_with_gaps: 50
-maturity_bands:
-  - {name: Initial, min: 0, max: 24}
-  - {name: Developing, min: 25, max: 49}
-  - {name: Defined, min: 50, max: 66}
-  - {name: Managed, min: 67, max: 84}
-  - {name: Optimised, min: 85, max: 100}
-area_weights:
-  Data: 25
-  Feature engineering: 25
-  Model training: 15
-  Validation & backtesting: 20
-  Deployment & monitoring: 15
-status_bands:
-  red_below: 50
-  amber_below: 67
+  - diagnostics/D08.yaml
+  - diagnostics/D43.yaml          # D10, D09, D11, D37 to follow
+library:
+  - library/recommendations.yaml
+
+areas:
+  - {name: Data, points: 25}
+  - {name: Feature engineering, points: 25}
+  - {name: Model training, points: 15}
+  - {name: Validation & backtesting, points: 20}
+  - {name: Deployment & monitoring, points: 15}
+
+frequencies:                      # used to convert period-based thresholds
+  daily:   {periods_per_year: 365, season_length: 7}
+  weekly:  {periods_per_year: 52,  season_length: 52}
+  monthly: {periods_per_year: 12,  season_length: 12}
+
+scoring:
+  scale: {min: 0, max: 100}
+  rule_order: first_matching_score_then_every_matching_cap
+  curve_interpolation: piecewise_linear     # between curve points; flat beyond the last point
+  status:
+    red_below: 50                 # placeholder
+    green_from: 67                # placeholder
+  maturity:
+    - {level: Initial,    from: 0}
+    - {level: Developing, from: 25}
+    - {level: Defined,    from: 50}
+    - {level: Managed,    from: 67}
+    - {level: Optimised,  from: 85}
+  attested_cap: {enabled: false, max: 60}   # open decision
+  no_evidence: {score: 0, status: No evidence}
+  not_found:   {status: Not found, provisional: true, after_confirmed_absence: Capability gap}
+
 gates:
-  - D14
-  - D34
-  - D43
-version_notes: "0.1.0: MVP subset. Thresholds are placeholders until the SME workshop."
+  diagnostics: [D14, D34, D43]
+  floor: 40                       # placeholder
+  trips_when: >-
+    The gate diagnostic's combined score is below the floor AND at least one trigger listed in the
+    entry's gate_policy is below the floor with its requirement met. Low scores from anything else
+    show in the score but cannot fail the gate.
+  inferred_trip_requires_review: true                  # Inferred evidence alone cannot trip a gate
+  pending_trigger_effect: readiness_not_confirmed      # a trigger awaiting review holds the verdict
+  no_evidence_effect: readiness_not_confirmed
+
+verdict:                          # evaluated top to bottom; first match wins
+  - {when: any_gate_tripped, verdict: Not ready, reason: "Gate {gate} is below the floor: {gate_finding}"}
+  - {when: overall_below, value: 50, verdict: Not ready, reason: "Overall score {overall} is below 50"}
+  - {when: any_gate_trigger_pending, verdict: Readiness not confirmed, reason: "Gate {gate} has a finding awaiting review: {gate_finding}"}
+  - {when: any_gate_without_evidence, verdict: Readiness not confirmed, reason: "No evidence yet for gate {gate}"}
+  - {when: overall_from, value: 67, verdict: Ready}
+  - {otherwise: true, verdict: Ready with gaps}
+
+combination:
+  data_area:
+    diagnostics: [D08, D09, D10, D11, D37, D43]
+    rule: lower_of_condition_and_control
+    condition_rule: mean_capped_at_weakest_critical   # mean of computed measure scores, never above the lowest critical one
+    control_rule: entry_scoring_rules                 # the entry's 'scoring' list: first score, then every cap
+    both_sides_evidenced: min
+    condition_only: {label: Controls not evidenced, gap_request: control}
+    control_only:   {label: Condition not measured, gap_request: condition}
+    neither: no_evidence
+    handled_issue_rule: "@data_stage.effects"         # raw: handled issues don't count; model-ready: everything counts
+    evidence_level: best_of_counted_records
+    provisional_when:
+      - any counted signal is in review status count_and_flag or needs_review
+      - any Verified code, config or log record not yet confirmed as the deployed version
+
+data_stage: shared/data_stage.yaml
+
+stockouts:                        # decision, 26 Oct 2026
+  in_scope: false
+  report_observation: false       # true: report estimated lost sales as an unscored observation
+  note: "Stockout and lost-sales signals are not scored anywhere in the framework while in_scope is false."
+
+
+weighting:
+  default: volume
+  volume_basis: [revenue, units]  # first available; revenue = units x price when price is shared
+  report_count_weighted: true     # the count-weighted figure is always shown beside the volume-weighted one
+
+latest_period:
+  reserved_for: D10
+  periods: 1                      # placeholder; the last N periods of every table belong to D10, not D08
+
+min_data_defaults:
+  periods_per_series: 8
+  series: 1
+  not_met: not_computed           # never scored 0; reported as "not computable with the data shared"
+
+releases: [v1, later]             # every measure and signal is tagged; only v1 items need planted tests for v1

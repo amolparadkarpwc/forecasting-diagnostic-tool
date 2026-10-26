@@ -25,7 +25,12 @@ PHASES = [
 _PHASE_BY_NAME = {item["name"]: item["k"] for item in PHASES}
 _PHASE_ROOT = {"DA": "Data", "FE": "Inputs", "MT": "Model", "VB": "Model", "DM": "Process"}
 _ROOT_LABEL = {"data": "Data", "inputs": "Inputs", "model": "Model", "process": "Process"}
-_VERDICT = {"Ready": "ready", "Ready with gaps": "gaps", "Not ready": "not"}
+_VERDICT = {
+    "Ready": "ready",
+    "Ready with gaps": "gaps",
+    "Not ready": "not",
+    "Readiness not confirmed": "hold",
+}
 _LEVELS = ((0, 25), (25, 50), (50, 67), (67, 85), (85, 101))
 _EFFORT_RANK = {"L": 0, "M": 1, "H": 2}
 
@@ -99,6 +104,9 @@ def _dated(value: object) -> str:
 
 
 def _why(overall: dict, diagnostics: list[dict]) -> str:
+    reason = str(overall.get("verdict_reason") or "").strip()
+    if reason:
+        return reason
     by_id = {item["id"]: item for item in diagnostics}
     failed = overall.get("failed_gates") or []
     score = overall.get("score")
@@ -177,15 +185,15 @@ def _area_snapshot(areas: list[dict], rows: list[dict]) -> dict:
     for phase in PHASES:
         area = by_name.get(phase["name"])
         items = grouped.get(phase["name"]) or []
-        if not items or area is None or area.get("score") is None:
+        if area is None or area.get("score") is None:
             snapshot[phase["k"]] = {"score": None, "assessedShare": 0, "points": 0}
             continue
-        points = sum(item["points"] for item in items) or 1.0
+        points = sum(item["points"] for item in items)
         assessed = sum(item["points"] for item in items if item["score"] is not None)
         snapshot[phase["k"]] = {
             "score": area.get("score"),
-            "assessedShare": assessed / points,
-            "points": sum(item["points"] for item in items),
+            "assessedShare": (assessed / points) if points else 0,
+            "points": float(area.get("points") or 0),
         }
     return snapshot
 
@@ -285,8 +293,9 @@ def _footer(results: dict) -> str:
     python = versions.get("python") or "—"
     return (
         f"Pack {pack} · engine {engine} · Python {python}. "
-        "Overall score is the points-weighted average of the diagnostics in this knowledge pack. "
-        "Missing evidence counts as zero. Checks outside the pack are shown as not assessed and are not scored. "
+        "Overall score weights each pack area by its points. "
+        "An area with no diagnostics, and a diagnostic with no evidence, counts as zero. "
+        "Checks outside the pack are shown as not assessed and are not scored. "
         "Thresholds are placeholders until the SME workshop. "
         "Measured evidence only excludes attested records."
     )
@@ -337,7 +346,8 @@ def _checks(results: dict, catalog: dict, actions: list[dict]) -> tuple[list[dic
             name = diagnostic.get("name") or spec["name"]
             points = diagnostic.get("points") if diagnostic.get("points") is not None else spec["pts"]
             tier = _tier(diagnostic.get("tier"), spec["tier"])
-            gate = bool(diagnostic.get("gate"))
+            gate_field = diagnostic.get("gate")
+            gate = True if isinstance(gate_field, dict) else bool(gate_field)
             finding = diagnostic.get("finding") or "No evidence was found for this diagnostic in the files shared."
             source = diagnostic.get("source_summary") or "No evidence in the files shared."
             question = diagnostic.get("question") or ""
@@ -364,6 +374,10 @@ def _checks(results: dict, catalog: dict, actions: list[dict]) -> tuple[list[dic
                 "tier": tier,
                 "pts": points,
                 "gate": gate,
+                "gateStatus": (diagnostic or {}).get("gate_result", {}).get("status") if diagnostic else None,
+                "conditionScore": (diagnostic or {}).get("condition_score") if diagnostic else None,
+                "controlScore": (diagnostic or {}).get("control_score") if diagnostic else None,
+                "combinedLabel": (diagnostic or {}).get("combined_label") if diagnostic else None,
                 "cap": bool(spec.get("cap")),
                 "ev": _evidence(score, level, applicable),
                 "score": score,
@@ -373,6 +387,8 @@ def _checks(results: dict, catalog: dict, actions: list[dict]) -> tuple[list[dic
                 "root": _PHASE_ROOT.get(phase, ""),
                 "target": max(targets) if targets else None,
                 "f": finding,
+                "detail": (diagnostic or {}).get("detail") or [],
+                "review": (diagnostic or {}).get("review_checklist") or [],
                 "rec": recommendation,
                 "inPack": in_pack,
             }

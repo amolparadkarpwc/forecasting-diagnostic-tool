@@ -1,0 +1,144 @@
+# Shared step: zero classification
+# Every run of zeros in the target series is classified once, by pattern, and each class has one
+# owner diagnostic. This is what lets D08, D10, D37 and D43 read the same zeros without
+# penalising them twice, and stops genuine intermittent demand being reported as a defect.
+
+id: zero_classification
+version: 0.2.0
+version_notes:
+  - "0.2.0 (26 Oct 2026): stockouts are out of scope (pack.stockouts). The two stockout classes are kept so that stockout-like runs are not misread as missing data or unexplained, but they have no owner, are not defects and are not reported unless pack.stockouts.report_observation is switched on."
+
+release: v1
+block: data_calc
+measure: zero_runs                       # new function in scoring/measures.py
+inputs:
+  required: [sales_history]
+  optional: [master_data.launch_date, master_data.status, stockout_flags, event_calendar]
+runs_on: "Target series (sales_history.actual) at every data stage"
+pre_step: >-
+  On a raw extract whose absent_row_semantics is no_sale, absent rows inside a series' active
+  window are treated as zeros before classification. Otherwise absent rows are not zeros: they are
+  measured by D08 gap_share.
+
+definitions:
+  zero_run: "Consecutive periods in one series where actual == 0"
+  active_window: "From the series' first non-zero period to its last non-zero period"
+  typical_rate: "Median of non-zero actuals inside the active window"
+  adi: "Average number of periods between non-zero actuals, inside the active window"
+  cv2: "Squared coefficient of variation of non-zero actuals"
+  share_at_zero: "For one period: share of series active in that period whose actual is 0"
+  simultaneous_period: "A period whose share_at_zero is at least sim_min_share AND at least sim_multiple times the median share_at_zero across all periods"
+
+series_profile:                          # computed first; also read by D09 and D36
+  demand_class:                          # Syntetos-Boylan cut-offs
+    smooth:       {adi_below: 1.32, cv2_below: 0.49}
+    erratic:      {adi_below: 1.32, cv2_from: 0.49}
+    intermittent: {adi_from: 1.32,  cv2_below: 0.49}
+    lumpy:        {adi_from: 1.32,  cv2_from: 0.49}
+  zero_heavy:
+    rule: "zero share inside the active window > 0.5"
+    consequence: "Median absolute deviation is 0, so MAD-based outlier scores are infinite for every sale. D09 must use non-zero sizes for these series."
+
+thresholds:                              # all placeholders; period lengths are per frequency
+  sim_min_share: 0.6
+  sim_multiple: 3
+  sim_min_series: 20                     # below this, simultaneous periods are not computed
+  sim_run_share: 0.5                     # share of a run's periods that must be simultaneous
+  discontinued_min_run: {daily: 56, weekly: 8, monthly: 3}
+  steady_zero_share_max: 0.10            # zero share outside the run
+  stockout_window: {daily: 14, weekly: 4, monthly: 2}   # periods before and after the run
+  stockout_recovery_ratio: 0.5           # pre and post means both >= ratio x typical_rate
+  latest_periods: "@pack.latest_period.periods"
+
+latest_period_rule: >-
+  Periods in the latest N are tested first. If they are simultaneous periods they are classed
+  partial_latest_period (owner D10) and cut from the run; the rest of the run is classified normally.
+
+classes:                                 # evaluated in order; first match wins
+  - id: partial_latest_period
+    owner: D10
+    defect: true
+    rule: "Run periods inside the latest N that are simultaneous periods"
+    level: Inferred
+
+  - id: pre_launch
+    owner: D37
+    defect: conditional
+    defect_when: "The model trains on the run: stage is model_ready, or the code shows no trim to the first sale or launch date"
+    rule: "Run starts at the series' first period in the table and ends at its first non-zero period"
+    level: Inferred
+    upgrade_to_verified: "master_data.launch_date is on or after the run's last period"
+
+  - id: post_discontinuation
+    owner: D37
+    defect: conditional
+    defect_when: "The series is still forecast or still in the accuracy figures"
+    rule: "Run starts after the last non-zero period, reaches the table end, and is at least discontinued_min_run long"
+    level: Inferred
+    upgrade_to_verified: "master_data.status marks the series discontinued or delisted"
+
+  - id: planned_closure
+    owner: none
+    defect: false
+    rule: "Run periods match event_calendar rows whose event_type is in @closure_event_types, for the series or its location"
+    level: Verified
+
+  - id: missing_filled_with_zero
+    owner: D08
+    defect: true
+    rule: "At least sim_run_share of the run's periods are simultaneous periods (outside the latest N)"
+    level: Inferred
+    min_data: {series: 20}
+    upgrade_to_verified: "Both stages shared and the raw extract has the same series-periods absent"
+
+  - id: stockout_confirmed
+    owner: none                           # out of scope: pack.stockouts.in_scope is false
+    defect: false
+    scope: "@pack.stockouts"
+    rule: "stockout_flags.in_stock is false for the run's periods"
+    level: Verified
+    outputs: [estimated_lost_units]
+
+  - id: stockout_candidate
+    owner: none                           # out of scope: pack.stockouts.in_scope is false
+    defect: false
+    scope: "@pack.stockouts"
+    rule: >-
+      Series is steady (zero share outside the run <= steady_zero_share_max, and demand class
+      smooth or erratic), and the mean actual in the stockout_window before and after the run
+      are both >= stockout_recovery_ratio x typical_rate
+    level: Inferred
+    review: none
+    outputs: [estimated_lost_units]
+    estimate: "estimated_lost_units = mean(pre-window mean, post-window mean) x run length"
+
+  - id: intermittent_zero
+    owner: none
+    context_for: [D36, D09]
+    defect: false
+    rule: "Series demand class is intermittent or lumpy"
+    level: Verified
+
+  - id: unexplained
+    owner: none
+    defect: false
+    rule: otherwise
+    review: needs_review
+    review_question: "What explains this zero run? (stockout, closure, data gap, real zero demand)"
+
+outputs:
+  per_run: [series_id, start, end, length, class, owner, level, estimated_lost_units, evidence]
+  per_series: [demand_class, zero_share, zero_heavy, adi, cv2, typical_rate, active_window_start, active_window_end]
+  per_period: [share_at_zero, simultaneous]
+  summary_by_class: [runs, series, periods, volume_weighted_share, count_weighted_share]
+
+records:                                 # how classifier output becomes evidence records
+  one_record_per: class_and_series       # not per run, to keep the review sheet readable
+  signal_id_pattern: "zero.{class}"      # e.g. zero.missing_filled_with_zero, owned by the class owner
+  owner_diagnostic: "{class.owner}"
+
+limitations:
+  - "An isolated zero-filled gap in a single series looks like a stockout or a real zero. It is classed stockout_candidate or intermittent_zero; a raw extract or the pipeline code resolves it."
+  - "With fewer than sim_min_series active series, simultaneous periods can't be detected: missing_filled_with_zero and partial_latest_period are not computed, and the report says so."
+  - "Seasonal-range products (e.g. Christmas lines) produce regular off-season runs. They fall to intermittent_zero or unexplained, never to a defect, until a seasonal-range rule is added (later)."
+  - "Store-level closures without an event calendar look like simultaneous zeros only if many series share the store; otherwise they classify as stockout_candidate and go to review."

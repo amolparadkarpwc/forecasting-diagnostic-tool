@@ -172,8 +172,18 @@ def compute_measures(diagnostics: list[dict], frames: dict) -> dict[str, dict[st
         requires = route.get("requires") or []
         if requires and any(name not in frames for name in requires):
             continue
-        slot: dict[str, float] = {}
-        for measure in route.get("measures") or []:
+        defined = route.get("measures") or []
+        slot: dict = {}
+        if isinstance(defined, dict):
+            # Dict-shaped measures are scored by the combination rule.
+            # `later` releases load and stay out of the score.
+            for name, spec in defined.items():
+                if isinstance(spec, dict) and spec.get("release") == "later":
+                    slot[name] = {"value": None, "computed": False, "reason": "not_implemented"}
+            if slot:
+                values[diagnostic["id"]] = slot
+            continue
+        for measure in defined:
             try:
                 value = _call_measure(measure["name"], frames)
             except Exception:
@@ -197,6 +207,10 @@ def build_measure_evidence(diagnostics: list[dict], frames: dict, owners: dict, 
         if owner is None and owners:
             owner = next(iter(owners.values()))
         for name, value in slot.items():
+            if isinstance(value, dict):
+                if not value.get("computed") or not isinstance(value.get("value"), (int, float)):
+                    continue
+                value = float(value["value"])
             records.append(
                 {
                     "diagnostic_id": diagnostic["id"],
@@ -209,7 +223,12 @@ def build_measure_evidence(diagnostics: list[dict], frames: dict, owners: dict, 
                     "handler": "data",
                     "block": "data_calc",
                     "fact": f"{name} = {value:.4f}",
-                    "values": {"measure": name, "value": value, "inputs": list(requires)},
+                    "values": {
+                        "measure": name,
+                        "value": value,
+                        "inputs": list(requires),
+                        "data_stage": "model_ready",
+                    },
                     "evidence_level": "Verified",
                     "match_strength": "exact",
                     "status": "auto_accepted",

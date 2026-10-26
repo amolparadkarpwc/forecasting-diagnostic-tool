@@ -1,0 +1,64 @@
+# Vocabulary for D43 Target definition. Referenced as @name or @name.key.
+
+version: 0.1.0
+
+# --- Finding the target in code and configs ------------------------------------
+target_config_keys: [target, target_col, target_column, label, label_col, y, y_col, ycol, response, dependent_variable, forecast_target, demand_column]
+target_rename_patterns:                         # libraries that expect a fixed target name
+  - {call: rename, args: {columns: {"*": y}}, desc: "Prophet, statsforecast and neuralforecast expect a column named y"}
+  - {call: rename, args: {columns: {"*": target}}}
+fit_calls: [fit, train, fit_predict, forecast, cross_validation, auto_arima, "lgb.train", "xgb.train", "LGBMRegressor.fit", "Prophet.fit", "StatsForecast.forecast"]
+fit_target_args: [y, label, target, y_train, endog]
+evaluation_calls: [mean_absolute_error, mean_squared_error, mean_absolute_percentage_error, root_mean_squared_error, median_absolute_error, r2_score, wape, mape, smape, rmse, mase, evaluate, score, cross_val_score]
+evaluation_actual_args: [y_true, actual, actuals, y_test, y_actual]
+
+# --- What the target is ------------------------------------------------------------
+# Column names are classified by the first family whose terms they contain.
+target_type_terms:
+  pos_sell_out: [pos, sell_out, sellout, scan, scanned, till, checkout, epos, consumer_sales, retail_sales, sell_thru, sell_through]
+  orders: [order, orders, ordered, order_qty, booking, bookings]
+  shipments: [ship, shipped, shipment, shipments, dispatch, dispatched, delivery, deliveries, delivered, goods_issue, sell_in, sellin]
+  invoiced: [invoice, invoiced, billing, billed]
+  consumption: [consumption, usage, issued_qty, withdrawals, draws]
+  value: [revenue, sales_value, sales_amount, turnover, gmv, net_sales_value, amount, value]
+  generic: [sales, qty, quantity, units, volume, demand]   # ambiguous: needs a definition elsewhere
+net_gross_terms:
+  net: [net, net_of_returns, netted]
+  gross: [gross, gross_sales]
+unit_terms_for_target: [units, eaches, each, cases, case, cartons, pallets, kg, litres, tonnes, value, revenue]
+
+# --- Returns and cancellations --------------------------------------------------------
+returns_column_terms: [return, returns, returned_qty, refund, credit_note, rma, reversal]
+row_type_column_terms: [type, txn_type, transaction_type, movement_type, doc_type, record_type]
+row_type_return_values: [return, returns, refund, credit, rma, reversal, "RET", "CR"]
+status_column_terms: [status, order_status, line_status, state]
+cancellation_status_values: [cancelled, canceled, cancel, void, voided, rejected, "CNL", "CXL"]
+
+returns_netting_patterns:
+  - {arithmetic: subtract, operand_terms: "@returns_column_terms", desc: "net = sales - returns"}
+  - {sql_case: {when_value_in: "@row_type_return_values", then: negative}, desc: "SUM(CASE WHEN type = 'RETURN' THEN -qty ELSE qty END)"}
+returns_separate_patterns:
+  - {filter: {column_role: target, comparison: "> 0"}, with_separate_returns_table: true}
+  - {columns_both_used: [gross_terms, returns_column_terms], desc: "gross target plus a separate returns series or model"}
+target_clip_patterns:
+  - {call: clip, args: {lower: 0}, on: target}
+  - {call: "np.clip", args_position: {1: 0}, on: target}
+  - {call: "np.maximum", args_position: {1: 0}, on: target}
+  - {call: where, condition: "< 0", value: 0, on: target}
+cancellation_filter_patterns:
+  - {filter: {column_terms: "@status_column_terms", excludes_any: "@cancellation_status_values"}}
+  - {sql_where: {column_terms: "@status_column_terms", not_in: "@cancellation_status_values"}}
+
+# --- Documents -------------------------------------------------------------------------
+target_definition_phrases: [target variable, forecast target, we forecast, the model forecasts, demand is defined, defined as, dependent variable, unit of forecast, forecast unit, forecast grain, forecast level]
+target_definition_sections: [target, forecast definition, data definitions, data dictionary, methodology, scope, problem statement]
+forecast_use_terms:                              # what decision the forecast feeds (release: later)
+  replenishment: [replenishment, store ordering, auto-replenishment, store orders, allocation]
+  production: [production planning, manufacturing, master production schedule, MPS, capacity planning]
+  s_and_op: ["S&OP", IBP, sales and operations planning, demand review]
+  finance: [budget, revenue forecast, financial plan, outlook]
+target_use_fit:                                  # placeholder table for the SME workshop (release: later)
+  replenishment: [pos_sell_out, consumption]
+  production: [orders, shipments]
+  s_and_op: [orders, shipments, pos_sell_out]
+  finance: [value, invoiced]

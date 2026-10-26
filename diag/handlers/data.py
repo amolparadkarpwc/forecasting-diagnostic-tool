@@ -83,12 +83,35 @@ def standardise(frame):
     return None, None
 
 
+def _read_frame(path: Path, detected: str):
+    if detected in {"xlsx", "xlsm"}:
+        import pandas as pd
+
+        try:
+            frame = pd.read_excel(path, dtype=str, engine="openpyxl")
+        except ImportError as exc:
+            raise RuntimeError("openpyxl is not installed") from exc
+        return frame, ""
+    if detected == "parquet":
+        import pandas as pd
+
+        try:
+            frame = pd.read_parquet(path)
+        except ImportError as exc:
+            raise RuntimeError("pyarrow is not installed") from exc
+        return frame, ""
+    return _read_table(path)
+
+
 def parse_data(path: Path, record: dict) -> ParsedArtifact:
-    frame, encoding = _read_table(path)
+    detected = str(record.get("detected_type") or "csv")
+    frame, encoding = _read_frame(path, detected)
     record["encoding"] = encoding
     if frame.empty or len(frame.columns) == 0:
-        raise ValueError("CSV has no rows")
+        raise ValueError("table has no rows")
     data_format, standard = standardise(frame)
+    if data_format:
+        record["data_format"] = data_format
     artifact = ParsedArtifact(
         artifact_id=record["artifact_id"],
         rel_path=record["path"],
@@ -100,7 +123,7 @@ def parse_data(path: Path, record: dict) -> ParsedArtifact:
     )
     if data_format is None:
         record["status"] = "manual_review"
-        record["reason"] = "CSV columns did not match sales_history or past_forecasts"
+        record["reason"] = "table columns did not match sales_history or past_forecasts"
         return artifact
     date_column = "date" if data_format == "sales_history" else "target_date"
     record["period_covered"] = _span(standard[date_column])

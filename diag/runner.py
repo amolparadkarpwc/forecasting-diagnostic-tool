@@ -8,6 +8,7 @@ import yaml
 
 from diag.intake.inventory import write_inventory
 from diag.intake.pipeline import collect
+from diag.intake.sort import ensure_layout
 from diag.outputs.dashboard import render_dashboard
 from diag.outputs.mask import mask_obj
 from diag.packload import load_pack
@@ -21,9 +22,9 @@ from diag import __version__
 
 def init_engagement(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
-    (path / "input").mkdir(exist_ok=True)
     (path / "work").mkdir(exist_ok=True)
     (path / "output").mkdir(exist_ok=True)
+    ensure_layout(path)
     config_path = path / "engagement.yaml"
     if not config_path.exists():
         config_path.write_text(
@@ -68,11 +69,33 @@ def save_config(path: Path, config: dict) -> None:
     (path / "engagement.yaml").write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
+def _apply_unconfirmed_stage(inventory: list[dict], pack: dict) -> None:
+    """Use the pack default until Gate 1 imports a decision. Never apply a proposed hint."""
+    shared = (pack.get("shared") or {}).get("data_stage") or {}
+    stage = shared.get("stage") or {}
+    default_stage = stage.get("default_when_unknown") or "model_ready"
+    flag = ((shared.get("effects") or {}).get("unknown") or {}).get("flag") or ""
+    absent = shared.get("absent_row_semantics") or {}
+    default_absent = absent.get("default_when_unknown") or "unknown"
+    for record in inventory:
+        if record.get("family") != "data":
+            continue
+        if record.get("data_stage_confirmed"):
+            continue
+        record["data_stage"] = default_stage
+        record["data_stage_hints"] = []
+        record["data_stage_flag"] = flag
+        if record.get("data_format") == "sales_history" or record.get("detected_type") == "sales_history":
+            record["absent_row_semantics"] = default_absent
+            record["absent_row_basis"] = "none"
+
+
 def execute(engagement: Path, pack_dir: Path, *, stage: str) -> dict:
     config = load_config(engagement)
     pack = load_pack(pack_dir)
     allowlist = list((pack["vocab"].get("model_file_allowlist") or {}).get("modules") or [])
     inventory, parsed = collect(engagement, allowlist)
+    _apply_unconfirmed_stage(inventory, pack)
     signal_records = build_signal_evidence(pack, parsed)
     frames, owners = collect_frames(parsed)
     measure_values = compute_measures(pack["diagnostics"], frames)

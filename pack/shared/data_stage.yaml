@@ -1,0 +1,89 @@
+# Shared step: data stage and absent-row meaning
+# Both are proposed by the engine from hints and confirmed by the practitioner at Gate 1,
+# alongside the column-mapping approval. The engine never applies a hint silently.
+
+id: data_stage
+version: 0.1.0
+release: v1
+applies_to_formats: [sales_history, input_data, master_data, event_calendar, stockout_flags]
+recorded_in:
+  - inventory.data_stage                 # new inventory field (spec 4.1)
+  - inventory.absent_row_semantics       # new inventory field, sales_history only
+  - review_sheet.data_stage              # new review-sheet column (spec 9.3)
+  - evidence_record.values.data_stage    # every data_calc record carries the stage it was computed on
+
+# ---------------------------------------------------------------------------
+# 1. Data stage: did this file reach the model?
+# ---------------------------------------------------------------------------
+stage:
+  values:
+    raw_source:  "Exported from the source system before the client's pipeline touched it"
+    model_ready: "Produced by the client's pipeline: the table the model trains or scores on"
+    unknown:     "Not established"
+  default_when_unknown: model_ready      # conservative: every issue counts; flagged on the review sheet
+  review_question: "Is this file straight from the source system, or produced by the client's pipeline?"
+
+  hints:                                 # each hint proposes a tag; the practitioner confirms
+    model_ready:
+      - id: written_by_shared_code
+        test: "File name or table name matches an output written in shared code (to_csv, to_parquet, to_sql, INSERT INTO, CREATE TABLE AS, dbt model name)"
+        strength: strong
+      - id: engineered_columns
+        test: "Two or more column names match @engineered_column_patterns"
+        strength: strong
+      - id: complete_grid
+        test: "Every series has every period between its first and last date, and the table has zeros"
+        strength: weak
+    raw_source:
+      - id: transactional_grain
+        test: "More than one row per series and period (transactions or line items)"
+        strength: strong
+      - id: source_system_columns
+        test: "Two or more column names match @source_system_column_terms"
+        strength: strong
+      - id: absent_periods_present
+        test: "Some series skip periods inside their active window"
+        strength: weak
+  conflict_rule: "Strong hints pointing both ways propose unknown"
+
+# ---------------------------------------------------------------------------
+# 2. Absent-row meaning: is a missing row a zero sale or missing data?
+#    Needed because zero-filling is correct for some sources and a defect for others.
+# ---------------------------------------------------------------------------
+absent_row_semantics:
+  applies_to: sales_history
+  values:
+    no_sale:      "The source writes no row when nothing sells; an absent row is a true zero"
+    missing_data: "The source writes zero-sale rows; an absent row is missing data"
+    unknown:      "Not established"
+  default_when_unknown: unknown
+  effect_when_unknown: "Only absences in simultaneous periods (see zero_classification) count as gaps; the rest go to review"
+  review_question: "When nothing sells, does the source write a zero row or no row at all?"
+
+  inference:                             # proposed to the practitioner, never applied silently
+    missing_data:
+      - "The raw extract contains explicit zero values for series inside their active window (the source records zeros)"
+      - "Absent rows cluster in simultaneous periods across series"
+    no_sale:
+      - "The raw extract has no zero values at all, absences are scattered, and most affected series are intermittent or lumpy"
+  evidence_level:
+    inferred_from_extract: Inferred
+    stated_by_client: Attested           # a client answer is a statement, like a document
+
+# ---------------------------------------------------------------------------
+# 3. Effects on scoring (used by every data-area entry)
+# ---------------------------------------------------------------------------
+effects:
+  raw_source:
+    issue_counts: unless_handled         # an issue counts only if no handled_by signal is found
+    parse_measures: computed
+  model_ready:
+    issue_counts: always                 # the issue reached the model
+    parse_measures: skipped              # coercion already happened; the control side (silent_coercion) covers it
+  unknown:
+    as: model_ready
+    flag: "Data stage not confirmed: issues counted as if they reached the model"
+
+both_stages_shared:
+  rule: "Count each series-period issue once. It counts if found in the model-ready table, or if found in the raw extract and not handled."
+  use_raw_for: [explaining causes, upgrading Inferred zero-filled gaps to Verified, measuring source quality for the finding]

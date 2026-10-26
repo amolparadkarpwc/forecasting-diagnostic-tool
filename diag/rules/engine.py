@@ -81,7 +81,10 @@ def build_signal_evidence(pack: dict, parsed: list) -> list[dict]:
                         produced = True
             derived = signal.get("derived")
             if derived and not produced:
-                source = values_by_signal.get((diagnostic["id"], derived.get("from")), {})
+                source_name = derived.get("from")
+                if isinstance(source_name, list):
+                    source_name = tuple(source_name)
+                source = values_by_signal.get((diagnostic["id"], source_name), {})
                 if evaluate_derived(derived, source):
                     records.append(
                         {

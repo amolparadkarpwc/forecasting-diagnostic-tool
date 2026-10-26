@@ -1,54 +1,600 @@
+# D08 Data profiling & validation
+# All curves, scores, caps and thresholds are placeholders until the SME workshop.
+# Condition = data_route (what the data shows). Control = signals + scoring (what the pipeline does).
+# The two combine by pack.combination.data_area: the lower of the two.
+
 id: D08
 name: Data profiling & validation
 area: Data
 tier: core
 points: 5
 gate: false
-question: "Is the history structurally sound, with missing periods and duplicate keys visible before a forecast run?"
+release: v1
+version: 0.1.1
+version_notes:
+  - "0.1.1 (26 Oct 2026): self-thresholds moved from derived to pass_when; checker now rejects self-referencing derived signals."
+  - "0.1.0 (26 Oct 2026): first full entry under the data-area combination rule."
+
+question: >-
+  Is the data the model learns from structurally sound, and does the pipeline check for structural
+  problems and deal with them before every run?
+what_it_checks: >-
+  Condition: missing periods, duplicate and conflicting records, out-of-range values, parse errors,
+  calendar and unit consistency, schema changes and key integrity. Control: whether validation runs
+  before each forecast, and how gaps, duplicates, bad values and bad lines are handled.
+
 applies_to: [ml, statistical, intermittent, baseline, unknown]
+family_rules: {}                          # D08 does not depend on the model family
+combination: "@pack.combination.data_area"
+
+# ---------------------------------------------------------------------------
+# Boundaries: what D08 owns, and what it leaves to others (penalise once)
+# ---------------------------------------------------------------------------
+boundaries:
+  owns:
+    - "Gaps in history and how they are filled; every period except the latest N (@pack.latest_period)"
+    - "Structural quality of every shared table: target, inputs and reference data"
+    - "Zero runs classed missing_filled_with_zero (shared/zero_classification)"
+  leaves:
+    - {topic: "Completeness of the latest period at run time", owner: D10}
+    - {topic: "Negative values that are returns netted into sales", owner: D43}
+    - {topic: "Plausible but unusual values: spikes and drops", owner: D09}
+    - {topic: "Level shifts that don't match a unit-conversion factor", owner: D11}
+    - {topic: "Pre-launch and discontinued zero runs", owner: D37}
+    - {topic: "Input distributions shifting over time", owner: D17}
+    - {topic: "Availability of inputs at forecast time", owner: D14}
+    - {topic: "Silent exception handling around loads and fits", owner: D41}
+    - {topic: "Hierarchy coherence of forecasts", owner: D38}
+
+supporting:                               # cited in findings, never scored here
+  - {ref: D41.silent_exception_handling, supporting_only: true, cite_when: "the try/except wraps data loading or validation"}
+  - {ref: D43.target_clipped_at_zero, supporting_only: true, cite_when: "clip(lower=0) is applied to the target"}
+  - {ref: D10.zero.partial_latest_period, supporting_only: true, cite_when: "gaps continue into the latest period"}
+
+# ---------------------------------------------------------------------------
+# CONDITION: data_route measures
+# ---------------------------------------------------------------------------
 data_route:
-  requires: [sales_history]
+  tables:
+    sales_history:  {weight: 2,   role: target}
+    input_data:     {weight: 1,   role: inputs}
+    master_data:    {weight: 1,   role: reference}
+    event_calendar: {weight: 0.5, role: reference}
+    past_forecasts: {weight: 0,   role: excluded, note: "Forecast archives are judged in validation (D22-D36), not here"}
+  table_combination: "Each measure is computed per table, then combined as a weighted mean using these weights"
+  condition_score: "@pack.combination.data_area.condition_rule"
+
   measures:
-    - name: missing_period_rate
+
+    gap_share:
+      release: v1
+      owner: D08
       critical: true
-      curve:
-        - {x: 0.0, y: 100}
-        - {x: 0.02, y: 85}
-        - {x: 0.08, y: 60}
-        - {x: 0.20, y: 30}
-        - {x: 0.50, y: 10}
-        - {x: 1.0, y: 0}
-    - name: duplicate_rate
+      tables: [sales_history, input_data]
+      definition: >-
+        Volume-weighted share of expected series-periods that are missing. Expected periods run from each
+        series' first to last non-zero period (lifecycle bounds from zero_classification), excluding the
+        latest N periods and planned closures. Absent rows count as gaps unless absent_row_semantics is
+        no_sale; when it is unknown, only absences in simultaneous periods count and the rest go to review.
+      components:
+        absent_periods:
+          level: Verified
+          how: "Row absent for the series-period, or target value null"
+        zero_filled_periods:
+          level: Inferred
+          how: "Zero runs classed missing_filled_with_zero by shared/zero_classification"
+          upgrade: "Verified when the raw extract shows the same series-periods absent"
+      block: data_calc
+      measure: gap_share
+      weighting: "@pack.weighting"
+      min_data: {periods_per_series: 8, zero_filled_component: {series: 20}}
+      curve: [[0.0, 100], [0.01, 78], [0.03, 58], [0.10, 25], [0.20, 0]]     # placeholder; x = share
+      handled_by: [explicit_gap_handling, zero_fill_matches_source]
+      never_handled_by: [zero_fill_gaps]
+      outputs: [gap_share, absent_share, zero_filled_share, count_weighted_share, series_affected, worst_periods]
+      insight: "{gap_share_pct}% of expected periods are missing across {series_affected} series ({count_weighted_pct}% by series count), concentrated in {worst_periods}."
+      recommendation: R-DA-01
+
+    duplicate_rows:
+      release: v1
+      owner: D08
+      critical: false
+      tables: [sales_history, input_data, master_data]
+      definition: "Share of rows that repeat another row exactly, on the business key and every value."
+      keys: {sales_history: [series_id, date], input_data: [series_id, date], master_data: [series_id]}
+      level: Verified
+      block: data_calc
+      measure: duplicate_rows
+      curve: [[0.0, 100], [0.005, 85], [0.02, 55], [0.05, 20]]               # placeholder
+      handled_by: [dedupe_exact, dedupe_keyed]
+      outputs: [duplicate_share, duplicate_rows, overstatement_pct]
+      insight: "{duplicate_share_pct}% of rows are exact duplicates; summed, they would overstate demand by {overstatement_pct}%."
+      recommendation: R-DA-04
+
+    conflicting_records:
+      release: v1
+      owner: D08
       critical: true
-      curve:
-        - {x: 0.0, y: 100}
-        - {x: 0.01, y: 70}
-        - {x: 0.05, y: 40}
-        - {x: 0.20, y: 15}
-        - {x: 1.0, y: 0}
+      tables: [sales_history, input_data, master_data]
+      definition: "Share of business keys with two or more rows that disagree on a value (e.g. two different quantities for one series-week, or one SKU mapped to two categories at once)."
+      keys: {sales_history: [series_id, date], input_data: [series_id, date], master_data: [series_id]}
+      level: Verified
+      block: data_calc
+      measure: conflicting_records
+      curve: [[0.0, 100], [0.001, 75], [0.01, 45], [0.03, 15]]               # placeholder
+      handled_by: [dedupe_keyed]
+      note: "drop_duplicates() without subset removes exact repeats only, so it never handles conflicts."
+      outputs: [conflict_share, conflict_keys, largest_difference, example_key]
+      insight: "{conflict_keys} keys have conflicting values (largest difference {largest_difference}, e.g. {example_key}), and nothing in the pipeline decides which one wins."
+      recommendation: R-DA-04
+
+    out_of_range:
+      release: v1
+      owner: D08
+      critical: true
+      tables: [sales_history, input_data, master_data]
+      definition: "Volume-weighted share of values that break a hard rule."
+      rules:
+        - {table: sales_history, column_role: target, test: below, value: 0, unless: returns_evidence, note: "Negatives that are returns belong to D43"}
+        - {table: input_data, column_terms: [price, unit_price, selling_price, list_price], test: at_or_below, value: 0}
+        - {table: input_data, column_terms: [discount, discount_pct, promo_depth], test: outside, range: [0, 1], note: "Range [0, 100] when values look like percentages"}
+        - {table: "*", column_role: date, test: after, value: extract_date}
+        - {table: master_data, column_terms: [launch_date], test: after, value: first_sale_date, note: "Sold before it launched"}
+        - {table: "*", rules_from: client_range_rules, release: later}
+      returns_evidence:
+        - "A sales_history column matches @returns_terms"
+        - "D43.returns_netted is found in code"
+        - "A document states that negative values are returns (Attested)"
+      level: Verified
+      block: data_calc
+      measure: out_of_range
+      curve: [[0.0, 100], [0.001, 85], [0.01, 55], [0.05, 15]]               # placeholder
+      handled_by: [range_checks]
+      outputs: [out_of_range_share, by_rule, examples]
+      insight: "{out_of_range_share_pct}% of values break hard rules: {by_rule}."
+      recommendation: R-DA-02
+
+    parse_errors:
+      release: v1
+      owner: D08
+      critical: false
+      stages: [raw_source]                  # skipped on model-ready data; silent_coercion covers that side
+      tables: [sales_history, input_data, master_data]
+      definition: "Share of values in numeric or date columns that fail to parse (text in numbers, unparseable dates, mixed decimal or thousands separators), plus CSV lines with the wrong field count."
+      level: Verified
+      block: data_calc
+      measure: parse_errors
+      curve: [[0.0, 100], [0.001, 85], [0.01, 55], [0.05, 20]]               # placeholder
+      handled_by: [strict_parsing, validation_framework_used]
+      never_handled_by: [silent_coercion, bad_lines_skipped]
+      outputs: [parse_error_share, by_column, malformed_lines, examples]
+      insight: "{parse_error_share_pct}% of values fail to parse, mostly in {by_column}; {malformed_lines} lines have the wrong number of fields."
+      recommendation: R-DA-03
+
+    calendar_consistency:
+      release: v1
+      owner: D08
+      critical: false
+      tables: [sales_history, input_data, event_calendar]
+      definition: "Share of rows whose date is off the table's period grid: mixed week anchors (Sunday and Monday weeks), irregular intervals, one period labelled twice under different anchors, or mixed frequencies in one table."
+      level: Verified
+      block: data_calc
+      measure: calendar_consistency
+      curve: [[0.0, 100], [0.005, 80], [0.05, 40], [0.20, 0]]                # placeholder
+      handled_by: [calendar_normalisation]
+      outputs: [off_grid_share, anchors_found, frequencies_found]
+      insight: "{off_grid_share_pct}% of rows sit off the period grid; the table mixes {anchors_found}."
+      recommendation: R-DA-05
+
+    unit_level_jumps:
+      release: later
+      owner: D08
+      critical: true
+      tables: [sales_history]
+      definition: >-
+        Volume share of series with a step change whose ratio is within 5% of a factor in @unit_factors
+        (or its reciprocal), and that either coincides across 3 or more series in the same period or
+        matches a unit change in master data.
+      boundary: "Steps that don't match a unit factor are structural breaks and belong to D11."
+      level: Inferred
+      block: data_calc
+      measure: unit_level_jumps
+      curve: [[0.0, 100], [0.01, 60], [0.05, 20]]                            # placeholder
+      handled_by: [unit_conversion_applied]
+      outputs: [affected_share, factor, period, series_examples]
+      insight: "{series_examples} jump by a factor of {factor} in {period}, which looks like a unit change, not a change in demand."
+      recommendation: R-DA-05
+
+    schema_drift:
+      release: v1
+      owner: D08
+      critical: false
+      tables: ["*"]
+      definition: "Columns added, removed, renamed or retyped between two dated extracts of the same table (or dated data dictionaries), without a matching change record in logs or documents."
+      min_data: {extracts_of_same_table: 2}
+      level: Verified
+      block: data_calc
+      measure: schema_drift
+      also_from_logs: "Events matching @log_schema_change_terms count as changes; a change record makes them flagged, not unflagged"
+      value: count_of_unflagged_changes
+      curve: [[0, 100], [1, 75], [2, 55], [4, 30], [8, 0]]                   # placeholder; x = count
+      handled_by: [schema_check_config, validation_framework_used]
+      outputs: [unflagged_changes, changes]
+      insight: "{unflagged_changes} schema changes between extracts were not flagged: {changes}."
+      recommendation: R-DA-08
+
+    key_integrity:
+      release: v1
+      owner: D08
+      critical: false
+      tables: [sales_history, master_data, input_data]
+      definition: "Volume share of sales-history series with no master-data record, plus input-data rows whose series never appear in sales history."
+      min_data: {tables: [sales_history, master_data]}
+      level: Verified
+      block: data_calc
+      measure: key_integrity
+      curve: [[0.0, 100], [0.005, 85], [0.02, 60], [0.10, 20]]               # placeholder
+      handled_by: [key_join_checks]
+      outputs: [orphan_share, orphan_series, unmatched_input_rows]
+      insight: "{orphan_series} series ({orphan_share_pct}% of volume) have no master-data record, so they can't be placed in the hierarchy."
+      recommendation: R-DA-07
+
+# ---------------------------------------------------------------------------
+# CONTROL: signals
+# polarity: positive | negative | neutral | context. Absence signals carry absence: true.
+# ---------------------------------------------------------------------------
+control_context:
+  requires: data_prep_code_present
+  when_missing: >-
+    Code-based absence signals are void and the control side is "not evidenced", not "not found":
+    the shared code may simply be the wrong part of the pipeline. Logs and documents still count.
+
 signals:
-  validation_described:
+
+  # --- context ----------------------------------------------------------------
+  data_prep_code_present:
+    polarity: context
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {calls: "@data_prep_markers.python_calls", min_matches: 2}}
+      - {type: sql_pattern, file_family: code, level: Verified, params: {statements: "@data_prep_markers.sql"}}
+      - {type: code_call, file_family: code, level: Verified, params: {dbt_functions: "@data_prep_markers.dbt_functions"}}
+    review: none
+
+  # --- validation exists and runs ---------------------------------------------
+  validation_framework_used:
     polarity: positive
     owner: D08
+    release: v1
     detectors:
-      - type: phrase_search
-        file_family: document
-        level: Attested
-        params:
-          phrases:
-            - validation checks
-            - data quality
-            - missing periods
+      - {type: code_import, file_family: code, level: Verified, params: {modules: "@validation_libraries.strong"}}
+      - {type: code_call, file_family: code, level: Verified, params: {calls_by_library: "@validation_calls", same_library_as_import: true}}
+    match: all                               # an import and a call from the same library
+    match_strength: exact
     review: none
+    values: [library, call_count, files, tables_covered]
+
+  validation_import_only:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_import, file_family: code, level: Verified, params: {modules: "@validation_libraries.strong"}}
+    derived: {from: validation_framework_used, test: import_without_call}
+    match_strength: keyword
+    review: count_and_flag
+    review_question: "The validation library is imported but no checks were found. Are they called from a module that wasn't shared?"
+    values: [library, files]
+
+  schema_check_config:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: config_key, file_family: config, level: Verified, params: {markers: "@validation_config_markers"}}
+    match_strength: exact
+    review: none
+    values: [tool, checks_count, tables_covered, covers_target]
+
+  assertions_on_data:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {assert_or_raise_with: "@assertion_predicates", on_dataframe: true}}
+    match_strength: pattern
+    review: none
+    values: [predicates, count, files]
+
+  validation_runs_logged:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: log_stats, file_family: log, level: Verified, params: {event_terms: "@log_validation_terms", per: run, statistic: share_of_runs_with_event}}
+    pass_when: {test: share_at_least, threshold: 0.9}    # placeholder: checks in >= 90% of forecast runs
+    review: none
+    values: [runs, runs_with_validation, share]
+
+  validation_misses_target:
+    polarity: negative
+    owner: D08
+    release: later
+    derived: {from: [validation_framework_used, schema_check_config], test: no_check_on_target_table}
+    review: count_and_flag
+    values: [tables_covered]
+
+  # --- how problems are handled -----------------------------------------------
+  explicit_gap_handling:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@gap_handling_patterns.python"}}
+    match_strength: pattern
+    review: none
+    values: [method, has_indicator_column, file, line]
+    note: "Imputation without an indicator column still counts as handled; the finding notes that the model can't tell imputed values from real ones."
+
+  zero_fill_gaps:
+    polarity: neutral
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@zero_fill_patterns.python_chains", followed_by_lines: 5}}
+      - {type: sql_pattern, file_family: code, level: Verified, params: {patterns: "@zero_fill_patterns.sql"}}
+    match_strength: pattern
+    review: none
+    values: [pattern, file, line, column]
+    note: "Detection only. Filling with zero is right when an absent row means no sale and a defect when it means missing data; the three derived signals below decide which."
+
+  zero_fill_hides_missing_data:
+    polarity: negative
+    owner: D08
+    release: v1
+    derived:
+      from: [zero_fill_gaps, zero.missing_filled_with_zero, "@data_stage.absent_row_semantics"]
+      test: zero_fill_on_missing_data
+      any_of:
+        - "zero.missing_filled_with_zero volume share >= 0.005"                       # placeholder
+        - "absent_row_semantics == missing_data AND gap_share.absent_share >= 0.005"  # placeholder
+    review: count_and_flag
+    level_rule: weakest_input               # Inferred when it rests on the classifier alone
+    values: [pattern, file, line, zero_filled_share_pct, series_affected]
+
+  zero_fill_matches_source:
+    polarity: positive
+    owner: D08
+    release: v1
+    derived:
+      from: [zero_fill_gaps, zero.missing_filled_with_zero, "@data_stage.absent_row_semantics"]
+      test: zero_fill_on_no_sale_rows
+      all_of:
+        - "absent_row_semantics == no_sale"
+        - "zero.missing_filled_with_zero volume share < 0.005"
+    review: none
+    values: [pattern, file, line]
+
+  zero_fill_unverified:
+    polarity: neutral
+    owner: D08
+    release: v1
+    derived: {from: zero_fill_gaps, test: no_data_to_test}
+    review: needs_review
+    review_question: "The pipeline fills missing periods with zero. When nothing sells, does the source write a zero row or no row at all?"
+    values: [pattern, file, line]
+
+  dedupe_exact:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@dedupe_patterns.exact_rows"}}
+      - {type: sql_pattern, file_family: code, level: Verified, params: {patterns: "@dedupe_patterns.exact_rows"}}
+    match_strength: exact
+    review: none
+    values: [file, line]
+
+  dedupe_keyed:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@dedupe_patterns.keyed"}}
+      - {type: sql_pattern, file_family: code, level: Verified, params: {patterns: "@dedupe_patterns.keyed"}}
+    match_strength: pattern
+    review: none
+    values: [keys, rule, file, line]
+
+  range_checks:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@range_check_patterns"}}
+    match_strength: pattern
+    review: none
+    values: [columns, rule, file, line]
+
+  strict_parsing:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@strict_parsing_patterns"}}
+    match_strength: pattern
+    review: none
+    values: [file, line]
+
+  calendar_normalisation:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@calendar_normalisation_patterns"}}
+      - {type: sql_pattern, file_family: code, level: Verified, params: {patterns: "@calendar_normalisation_patterns"}}
+    match_strength: pattern
+    review: none
+    values: [anchor, file, line]
+
+  unit_conversion_applied:
+    polarity: positive
+    owner: D08
+    release: later
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {arithmetic_with_column_terms: "@unit_terms"}}
+      - {type: lineage_lookup, file_family: config, level: Verified, params: {column_terms: "@unit_terms"}}
+    match_strength: pattern
+    review: count_and_flag
+    values: [factor_column, file, line]
+
+  key_join_checks:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@merge_check_patterns"}}
+      - {type: config_key, file_family: config, level: Verified, params: {dbt_tests: [relationships]}}
+    match_strength: exact
+    review: none
+    values: [file, line]
+
+  # --- harmful handling -------------------------------------------------------
+  silent_coercion:
+    polarity: negative
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@coercion_patterns", unless: "@coercion_exemption"}}
+    match_strength: pattern
+    review: none
+    values: [call, column, file, line]
+
+  bad_lines_skipped:
+    polarity: negative
+    owner: D08
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@bad_line_patterns"}}
+    match_strength: exact
+    review: none
+    values: [call, file, line]
+
+  validation_failures_ignored:
+    polarity: negative
+    owner: D08
+    release: v1
+    detectors:
+      - {type: log_stats, file_family: log, level: Verified, params: {event_terms: "@log_validation_terms", status_terms: "@log_status_terms.fail", then_terms: "@log_publish_terms", same_run: true, statistic: count}}
+    pass_when: {test: count_above, threshold: 0}
+    review: count_and_flag
+    values: [runs_affected, example_run]
+
+  # --- documents (always Attested) --------------------------------------------
+  dq_process_described:
+    polarity: positive
+    owner: D08
+    release: v1
+    detectors:
+      - {type: phrase_search, file_family: document, level: Attested, params: {phrases: "@dq_phrases", sections: "@dq_section_titles", min_hits: 2}}
+    match_strength: keyword
+    review: count_and_flag
+    values: [document, section, passage]
+
+  dq_metrics_reported:
+    polarity: context
+    owner: D08
+    release: v1
+    detectors:
+      - {type: fact_pattern, file_family: document, level: Attested, params: {patterns: "@dq_metric_patterns"}}
+    contradiction:
+      compare_with: gap_share
+      flag_when: "reported completeness differs from measured by more than 2 percentage points"   # placeholder
+      rule: measured_wins
+    review: count_and_flag
+    values: [document, metric, value]
+
+  # --- absence ----------------------------------------------------------------
+  no_validation_found:
+    polarity: negative
+    owner: D08
+    release: v1
+    absence: true
+    requires_context: data_prep_code_present
+    derived:
+      test: none_found
+      of: [validation_framework_used, validation_import_only, schema_check_config, assertions_on_data, validation_runs_logged]
+    review: count_and_flag                 # stays provisional until a practitioner confirms the absence
+    review_question: "No data checks were found in the shared code, configs or logs. Do any run elsewhere (for example in the warehouse or an orchestration tool)?"
+
+# ---------------------------------------------------------------------------
+# CONTROL: scoring (first matching score wins; every matching cap applies)
+# ---------------------------------------------------------------------------
 scoring:
-  - {when_all: [validation_described], score: 55}
+  - {when_all: [validation_framework_used, validation_runs_logged], score: 90}
+  - {when_all: [schema_check_config, validation_runs_logged], score: 90}
+  - {when_all: [validation_framework_used], score: 80}
+  - {when_all: [schema_check_config], score: 80}
+  - {when_all: [assertions_on_data, validation_runs_logged], score: 75}
+  - {when_all: [assertions_on_data], score: 65}
+  - {when_all: [validation_runs_logged], score: 65}
+  - {when_all: [validation_import_only], score: 60}
+  - {when_all: [dq_process_described], score: 60}
+  - {when_all: [no_validation_found], score: 55}
+  - {when_all: [zero_fill_hides_missing_data], cap: 40}
+  - {when_all: [silent_coercion], cap: 50}
+  - {when_all: [bad_lines_skipped], cap: 50}
+  - {when_all: [validation_failures_ignored], cap: 50}
+  - {when_all: [validation_misses_target], cap: 65}
   - {otherwise: no_evidence}
-finding_template: "Missing periods are {missing_period_rate_pct} of the expected history and duplicate keys are {duplicate_rate_pct} of rows."
+scoring_notes:
+  - "Conflicting records that a plain drop_duplicates() leaves behind count on the condition side only; there is no control cap for them (penalise once)."
+  - "The zero-fill cap applies even when the condition side also counts the gaps: the combined score takes the lower side, so the penalty never compounds."
+
+# ---------------------------------------------------------------------------
+# Report text (templates use only values produced by the detectors and measures)
+# ---------------------------------------------------------------------------
+insights:
+  zero_fill_hides_missing_data: "Missing periods are filled with zero ({file}, line {line}), so the model learns {zero_filled_share_pct}% of history across {series_affected} series as zero demand."
+  zero_fill_unverified: "Missing periods are filled with zero ({file}, line {line}). Whether that is right depends on whether the source writes zero-sale rows; this is open with the client."
+  silent_coercion: "Values that fail to parse are silently converted ({call} on {column}, {file} line {line}), so bad records enter training as zeros or disappear."
+  bad_lines_skipped: "Malformed input lines are skipped without a record ({file}, line {line})."
+  validation_failures_ignored: "Validation failed in {runs_affected} runs that still published a forecast (for example run {example_run})."
+  no_validation_found: "No data checks were found in the shared code, configs or logs."
+  validation_framework_used: "Data is validated with {library} before use ({call_count} checks across {files})."
+  validation_runs_logged: "Validation ran in {runs_with_validation} of {runs} forecast runs."
+  dq_metrics_reported: "The client's documents report {metric} of {value}; the measured figure is shown alongside."
+
 recommendations:
-  missing_period_rate: R-DATA-01
-  duplicate_rate: R-DATA-01
-  validation_described: R-DATA-01
-gap_request: "A sales history extract with series id, date, and actual, plus any data-quality checks that run before forecasting."
+  zero_fill_hides_missing_data: R-DA-01
+  zero_fill_unverified: R-DA-01
+  no_validation_found: R-DA-02
+  validation_misses_target: R-DA-02
+  silent_coercion: R-DA-03
+  bad_lines_skipped: R-DA-03
+  validation_failures_ignored: R-DA-06
+
+# ---------------------------------------------------------------------------
+# Targeted request and practitioner review
+# ---------------------------------------------------------------------------
+gap_request:
+  condition: >-
+    A raw extract of sales history straight from the source system: at least 2 years, all series or a
+    stated random sample, with the total number of series, and how zero-sale periods are recorded
+    (zero rows or no rows). Master data for the same series.
+  control: >-
+    The code or SQL that loads and prepares the data (prep scripts, SQL extracts, dbt models), any
+    validation configuration (expectation suites, schema files, dbt tests), and the last 3 months of
+    pipeline logs.
+
 review_checklist:
-  - "Are missing periods and duplicates blocked before training?"
-version_notes: "0.1.0: MVP scores missing periods and duplicate keys from sales_history."
+  - "When nothing sells, does the source write a zero row or no row at all? (decides every zero-fill signal)"
+  - "Is the shared prep code the version that runs in production?"
+  - "Do validation failures stop the run, or only log a warning?"
+  - "When the source schema changes, who is told, and how?"
+  - "Are negative values returns? If so, where are returns recorded?"
+  - "Was the extract a random sample or chosen by the client? How many series exist in total?"
+  - "Do any data checks run outside the shared code, e.g. in the warehouse or the orchestration tool?"
+
+tests: "README.md, section 6 (planted cases D1-D22, Z1-Z9, S1-S4)"

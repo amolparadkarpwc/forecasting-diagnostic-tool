@@ -44,11 +44,27 @@ signals:
 scoring:
   - {when_any: [negative_shift, future_dated_join], score: 20}
   - {otherwise: no_evidence}
-finding_template: "Point-in-time check failed. {fact}"
+checks:
+  - id: feature_shift
+    name: Negative shift used as a feature
+    signal: negative_shift
+    when_found: "A feature is built with a negative shift, so the row can see a future actual. {fact}"
+    when_missing: "No negative shift used as a feature was found in the Python that was parsed."
+  - id: label_shift
+    name: Negative shift used as a label
+    signal: possible_label_shift
+    when_found: "A negative shift is assigned to a target or label. That can be legitimate if it is filtered to the target date, so it is left for review rather than scored as leakage. {fact}"
+    when_missing: "No negative shift assigned to a target or label was found."
+  - id: future_join
+    name: Future-dated join
+    signal: future_dated_join
+    when_found: "A SQL join keeps rows whose date is on or after the source date, which can pull in information not yet known. {fact}"
+    when_missing: "No future-dated join of that form was found in the SQL that was parsed."
 recommendations:
   negative_shift: R-FE-01
   future_dated_join: R-FE-01
 gap_request: "The feature-build code or SQL, with the as-of rule used for every training row."
 review_checklist:
   - "Is a negative shift building a label that is filtered to the target date, rather than a feature?"
-version_notes: "0.1.0: negative shift used as a feature is flagged; a shift assigned to a target or label is left for review."
+  - "For every driver joined in SQL, would that value have been known on the forecast origin date?"
+version_notes: "0.2.0: leakage is reported as separate checks for feature shift, label shift, and future-dated joins."

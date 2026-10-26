@@ -44,6 +44,7 @@ def dispatch_handler(path: Path, record: dict) -> ParsedArtifact | None:
         "txt",
         "md",
         "docx",
+        "pdf",
         "vtt",
         "transcript",
         "png",

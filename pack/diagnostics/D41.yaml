@@ -58,7 +58,27 @@ scoring:
   - {when_any: [high_failure_rate, silent_except, filterwarnings_ignore], score: 30}
   - {when_all: [scheduled_success], score: 85}
   - {otherwise: no_evidence}
-finding_template: "Scheduled runs are unreliable (failure rate {failure_rate_pct}). {fact}"
+checks:
+  - id: failure_rate
+    name: Run failure rate
+    signal: high_failure_rate
+    when_found: "At least 20% of the logged forecast runs failed. {fact}"
+    when_missing: "A failure rate of 20% or more was not found in the logs."
+  - id: scheduled_success
+    name: Runs completing on schedule
+    signal: scheduled_success
+    when_found: "At least three logged runs completed with a failure rate of 5% or less. {fact}"
+    when_missing: "There is no log of at least three runs with a failure rate of 5% or less."
+  - id: silent_except
+    name: Swallowed exceptions
+    signal: silent_except
+    when_found: "A bare or broad except continues or passes, so a failed fit can look like a successful run. {fact}"
+    when_missing: "No except that continues or passes was found in the Python that was parsed."
+  - id: ignored_warnings
+    name: Ignored warnings
+    signal: filterwarnings_ignore
+    when_found: "Warnings are filtered with ignore, which can hide a fit that did not converge. {fact}"
+    when_missing: "No filterwarnings call that ignores warnings was found."
 recommendations:
   high_failure_rate: R-DEP-01
   silent_except: R-DEP-01
@@ -67,4 +87,5 @@ recommendations:
 gap_request: "The scheduler log for recent forecast runs, and the exception handling around model fit."
 review_checklist:
   - "Is there a tested fallback when a run fails, and does someone get alerted?"
-version_notes: "0.1.0: MVP uses log failure rate plus silent except and filterwarnings('ignore')."
+  - "Does a swallowed exception still produce a forecast that planners will treat as fresh?"
+version_notes: "0.2.0: failure rate, successful schedule, swallowed exceptions, and ignored warnings are separate checks."

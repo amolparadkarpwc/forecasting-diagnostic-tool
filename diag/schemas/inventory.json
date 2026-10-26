@@ -14,6 +14,11 @@
     "period_covered": {"type": "string"},
     "status": {"type": "string", "enum": ["readable", "unreadable", "duplicate", "needs_version_choice", "quarantined", "manual_review"]},
     "reason": {"type": "string"},
-    "version_group": {"type": "string"}
+    "version_group": {"type": "string"},
+    "data_stage": {"type": "string", "enum": ["raw_source", "model_ready", "unknown"]},
+    "data_stage_hints": {"type": "array"},
+    "data_stage_flag": {"type": "string"},
+    "absent_row_semantics": {"type": "string", "enum": ["no_sale", "missing_data", "unknown"]},
+    "absent_row_basis": {"type": "string", "enum": ["inferred_from_extract", "stated_by_client", "none"]}
   }
 }

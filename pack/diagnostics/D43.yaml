@@ -1,44 +1,452 @@
+# D43 Target definition (gate)
+# Stockouts and lost sales are OUT OF SCOPE by decision (26 Oct 2026, pack.stockouts).
+# All curves, score maps, scores, caps and thresholds are placeholders until the SME workshop.
+# Condition = data_route. Control = signals + scoring. Combined by pack.combination.data_area.
+
 id: D43
 name: Target definition
 area: Data
 tier: core
-points: 6
+points: 6                                 # placeholder; see README section 9 on whether 6 points still fits
 gate: true
-question: "Does the history the model learns from reflect true demand, including stockouts, returns, and cancellations?"
+release: v1
+version: 0.1.0
+version_notes:
+  - "0.1.0 (26 Oct 2026): first full entry. Stockouts excluded by decision; the gate trips only on listed triggers."
+
+question: >-
+  Is the model trained and judged on one clearly defined target: the same quantity, unit and grain,
+  with the same treatment of returns and cancellations, across the data, the code and the documents?
+what_it_checks: >-
+  Condition: whether the versions of the target the client shares agree, whether forecasts and
+  actuals share a grain and a unit, and how much of the target is returns or cancelled orders.
+  Control: whether the target column can be traced in code, is defined in a config or document, is
+  the same in training and in evaluation, and whether returns and cancellations are handled.
+scope_exclusions:
+  - "Stockouts and lost sales (pack.stockouts.in_scope: false). Zero runs that look like stockouts are classified but not scored."
+  - "Whether the accuracy metric reflects business cost (build spec 1.3)."
+
 applies_to: [ml, statistical, intermittent, baseline, unknown]
+family_rules: {}
+applies_to_forecast_types: all            # with stockouts out of scope, nothing in D43 is demand-specific
+combination: "@pack.combination.data_area"
+
+# ---------------------------------------------------------------------------
+# Boundaries (penalise once)
+# ---------------------------------------------------------------------------
+boundaries:
+  owns:
+    - "What the target quantity is: sell-out, orders, shipments, invoiced, consumption or value; gross or net; with or without cancellations"
+    - "Negative target values that are returns netted into sales (D08 routes them here)"
+    - "Whether forecasts and actuals share a grain and a unit"
+    - "Whether one definition is used across data, training code, evaluation code and documents"
+  leaves:
+    - {topic: "Stockouts and lost sales", owner: none, note: "Out of scope by decision"}
+    - {topic: "Negative values that are not returns", owner: D08}
+    - {topic: "Unit changes over time inside one series", owner: D08}
+    - {topic: "Schema changes between extracts", owner: D08}
+    - {topic: "How accurate the forecasts are", owner: D23}
+    - {topic: "Systematic over- or under-forecasting", owner: D24}
+    - {topic: "Forecasts adding up across hierarchy levels", owner: D38}
+    - {topic: "Production computing inputs differently from training", owner: D30}
+
+supporting:
+  - {ref: D08.out_of_range, supporting_only: true, cite_when: "negative values were checked for returns evidence"}
+  - {ref: D08.unit_level_jumps, supporting_only: true, cite_when: "a unit change inside a series coincides with a unit mismatch between tables"}
+  - {ref: D24.bias, supporting_only: true, cite_when: "forecasts and actuals differ in level without a unit explanation"}
+
+# ---------------------------------------------------------------------------
+# Gate policy: only these findings can fail the gate (the materiality trigger)
+# ---------------------------------------------------------------------------
+gate_policy:
+  floor: "@pack.gates.floor"
+  triggers:
+    - id: target_mismatch_training_evaluation
+      kind: signal
+      requires: lineage_resolved_or_review_confirmed
+      why: "Accuracy is measured on a different quantity from the one the model learns"
+    - id: definitions_conflict
+      kind: signal
+      requires: review_confirmed
+      why: "Code, configs and documents disagree on what the target is"
+    - id: target_undefined
+      kind: signal
+      requires: absence_confirmed
+      why: "Nobody can state what the model forecasts"
+    - id: target_reconciliation
+      kind: measure
+      requires: none
+      why: "The versions of the target the client shares disagree materially"
+    - id: grain_alignment
+      kind: measure
+      requires: none
+      values: [level_mismatch_unmapped]
+      why: "Forecasts can't be matched to actuals at all"
+    - id: unit_alignment
+      kind: measure
+      requires: review_confirmed
+      values: [unit_mismatch_suspected]
+      why: "Forecasts and actuals appear to be in different units"
+  non_triggers: "Returns, cancellations, clipping and an ambiguous target name lower the score but cannot fail the gate."
+
+# ---------------------------------------------------------------------------
+# CONDITION: data_route measures
+# ---------------------------------------------------------------------------
+data_route:
+  tables:
+    sales_history:  {weight: 1, role: target, note: "May arrive in several versions, tagged by source"}
+    past_forecasts: {weight: 1, role: comparison}
+    accuracy_export: {weight: 0.5, role: comparison}
+  table_combination: "Measures compare tables; each measure is computed once"
+  condition_score: "@pack.combination.data_area.condition_rule"
+  target_versions: >-
+    Every table mapped to sales_history with a distinct source tag, plus past_forecasts.actual when
+    present (new optional column). The version whose lineage matches target_identified is the
+    model's target.
+
+  measures:
+
+    target_reconciliation:
+      release: v1
+      owner: D43
+      critical: true
+      tables: [sales_history, past_forecasts, accuracy_export]
+      definition: >-
+        Volume share of overlapping series-periods where two versions of the target differ by more than
+        the tolerance. Most important pair: the model's training target against the actuals used to
+        measure accuracy (archive actuals, or totals in an accuracy export).
+      tolerance: {relative: 0.01, absolute_units: 1}                         # placeholder
+      min_data: {versions: 2, overlapping_periods: 8}
+      level: Verified
+      block: data_calc
+      measure: target_reconciliation
+      weighting: "@pack.weighting"
+      curve: [[0.0, 100], [0.01, 80], [0.03, 55], [0.05, 35], [0.15, 0]]    # placeholder; below 40 from about 4.5%
+      handled_by: []
+      outputs: [mismatch_share, count_weighted_share, versions_compared, largest_gap_series, direction]
+      insight: "The {versions_compared} disagree on {mismatch_share_pct}% of volume ({count_weighted_pct}% of series-periods); the {direction}, largest in {largest_gap_series}."
+      recommendation: R-DA-11
+
+    grain_alignment:
+      release: v1
+      owner: D43
+      critical: true
+      tables: [sales_history, past_forecasts]
+      definition: >-
+        Whether forecasts and the target share a frequency, a week anchor, and product and location
+        levels. Series that can't be mapped between the two tables count as unmapped.
+      min_data: {tables: [sales_history, past_forecasts]}
+      level: Verified
+      block: data_calc
+      measure: grain_alignment
+      value: category
+      score_map:                                                             # placeholder
+        aligned: 100
+        forecast_coarser: 90              # forecasts aggregate the target: fine if stated
+        forecast_finer: 60                # forecasts below the target's grain need a split rule
+        anchor_mismatch: 45               # e.g. forecast weeks start Monday, actual weeks Sunday
+        level_mismatch_unmapped: 25       # forecasts can't be matched to actuals
+      unmapped_threshold: 0.2             # placeholder: share of forecast volume that can't be mapped
+      handled_by: []
+      outputs: [category, forecast_grain, target_grain, unmapped_share]
+      insight: "Forecasts are at {forecast_grain} and the target at {target_grain} ({category}); {unmapped_share_pct}% of forecast volume can't be matched to actuals."
+      recommendation: R-DA-14
+
+    unit_alignment:
+      release: v1
+      owner: D43
+      critical: true
+      tables: [sales_history, past_forecasts]
+      definition: >-
+        Volume-weighted median, across series, of forecast / actual over overlapping periods. Inside
+        [0.67, 1.5] is aligned. Within 5% of a factor in @unit_factors (or its reciprocal) for most series,
+        or within 10% of the average price when prices are shared, is a suspected unit mismatch.
+      band: [0.67, 1.5]                                                      # placeholder
+      factor_tolerance: 0.05                                                 # placeholder
+      min_data: {overlapping_periods: 8, series: 10}
+      level: Inferred
+      block: data_calc
+      measure: unit_alignment
+      value: category
+      score_map:                                                             # placeholder
+        aligned: 100
+        unexplained_ratio: 60             # level gap without a unit explanation: cited by D24, not a gate trigger
+        unit_mismatch_suspected: 30
+      review: block_for_gate
+      handled_by: []
+      outputs: [category, median_ratio, nearest_factor, series_share]
+      insight: "Forecasts run at {median_ratio} times actuals for {series_share_pct}% of series, close to a factor of {nearest_factor}, which suggests forecasts and actuals are in different units."
+      recommendation: R-DA-14
+
+    returns_share:
+      release: v1
+      owner: D43
+      critical: false
+      tables: [sales_history]
+      definition: >-
+        Returns netted into the target, as a share of gross volume: negative target values, rows whose
+        type matches @row_type_return_values, or a returns column subtracted in code. Computed only when
+        the target is net.
+      level: Verified
+      block: data_calc
+      measure: returns_share
+      weighting: "@pack.weighting"
+      curve: [[0.0, 100], [0.02, 85], [0.05, 65], [0.15, 35], [0.30, 15]]   # placeholder
+      handled_by: [returns_handled_explicitly]
+      outputs: [returns_share, top_categories, lag_note]
+      insight: "Returns make up {returns_share_pct}% of gross volume and are netted into the target, mostly in {top_categories}, so the model learns returns as negative demand."
+      recommendation: R-DA-12
+
+    cancellation_share:
+      release: v1
+      owner: D43
+      critical: false
+      tables: [sales_history]
+      definition: "Volume share of target rows whose status matches @cancellation_status_values. Computed only when a status column exists."
+      min_data: {columns: [status]}
+      level: Verified
+      block: data_calc
+      measure: cancellation_share
+      weighting: "@pack.weighting"
+      curve: [[0.0, 100], [0.01, 85], [0.05, 55], [0.15, 25]]               # placeholder
+      handled_by: [cancellations_excluded]
+      outputs: [cancellation_share, statuses_found]
+      insight: "{cancellation_share_pct}% of target volume is on cancelled lines ({statuses_found}), and it is still counted as demand."
+      recommendation: R-DA-13
+
+    definition_drift:
+      release: later
+      owner: D43
+      critical: false
+      tables: [sales_history]
+      definition: "A break in the ratio between two target versions over time, or a change of source system inside the history (e.g. from shipments to till sales)."
+      min_data: {versions: 2, periods: 52}
+      level: Inferred
+      block: data_calc
+      measure: definition_drift
+      curve: [[0, 100], [1, 60], [2, 40]]                                    # placeholder; x = breaks found
+      handled_by: []
+      outputs: [break_period, ratio_before, ratio_after]
+      insight: "The target's definition appears to change in {break_period}: the ratio between versions moves from {ratio_before} to {ratio_after}."
+      recommendation: R-DA-10
+
+# ---------------------------------------------------------------------------
+# CONTROL: signals
+# ---------------------------------------------------------------------------
+control_context:
+  requires: training_code_present
+  when_missing: >-
+    Without training code, the target can't be traced, so target_undefined is void and the control
+    side rests on configs and documents. Absence in documents alone never counts as undefined.
+
 signals:
-  stockout_handling:
+
+  training_code_present:
+    polarity: context
+    owner: D43
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {calls: "@fit_calls"}}
+    review: none
+
+  target_identified:
     polarity: positive
     owner: D43
+    release: v1
     detectors:
-      - type: phrase_search
-        file_family: document
-        level: Attested
-        params:
-          phrases:
-            - lost sales
-            - stockout
-            - stock-out
-    review: block
+      - {type: code_call, file_family: code, level: Verified, params: {calls: "@fit_calls", argument_roles: "@fit_target_args", trace_to_column: true}}
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@target_rename_patterns"}}
+      - {type: config_key, file_family: config, level: Verified, params: {key_terms: "@target_config_keys"}}
+      - {type: lineage_lookup, file_family: code, level: Verified, params: {from: target_column, classify_with: "@target_type_terms"}}
+    match_strength: pattern
+    review: none
+    values: [column, source_table, target_type, net_or_gross, file, line]
+
+  target_definition_stated:
+    polarity: positive
+    owner: D43
+    release: v1
+    detectors:
+      - {type: config_key, file_family: config, level: Verified, params: {key_terms: "@target_config_keys", with_description: true}}
+      - {type: phrase_search, file_family: document, level: Attested, params: {phrases: "@target_definition_phrases", sections: "@target_definition_sections", min_hits: 1}}
+      - {type: table_extract, file_family: document, level: Attested, params: {headers_any: [field, column, variable], rows_matching: "@target_config_keys", desc: "data dictionary row for the target"}}
+    match_strength: keyword
+    review: count_and_flag
+    values: [source, stated_type, stated_unit, stated_grain, net_or_gross]
+
+  evaluation_actuals_traced:
+    polarity: context
+    owner: D43
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {calls: "@evaluation_calls", argument_roles: "@evaluation_actual_args", trace_to_column: true}}
+    match_strength: pattern
+    review: none
+    values: [evaluation_column, source_table, file, line]
+
+  target_same_in_training_and_evaluation:
+    polarity: positive
+    owner: D43
+    release: v1
+    derived: {from: [target_identified, evaluation_actuals_traced], test: same_source_column}
+    review: none
+    values: [training_column, evaluation_column, file, line]
+
+  target_mismatch_training_evaluation:
+    polarity: negative
+    owner: D43
+    release: v1
+    gate_trigger: true
+    derived: {from: [target_identified, evaluation_actuals_traced], test: different_source_column}
+    review: count_and_flag                # confirmed automatically when lineage resolves both columns to their sources
+    values: [training_column, training_type, evaluation_column, evaluation_type, file, line]
+
+  definitions_conflict:
+    polarity: negative
+    owner: D43
+    release: v1
+    gate_trigger: true
+    derived:
+      from: [target_identified, target_definition_stated]
+      test: target_types_differ
+      note: "Compares target_type, net_or_gross and unit across code, configs and documents. Generic names (qty, sales) never conflict; they make the target ambiguous instead."
+    review: block_for_gate
+    level_rule: weakest_input
+    values: [sources, types_found]
+
+  target_ambiguous:
+    polarity: negative
+    owner: D43
+    release: v1
+    derived: {from: [target_identified, target_definition_stated], test: generic_name_without_definition}
+    review: count_and_flag
+    review_question: "The model forecasts a column called '{column}'. What exactly is it: till sales, orders, shipments, invoiced or value? Gross or net of returns? With or without cancellations?"
+    values: [column]
+
+  target_undefined:
+    polarity: negative
+    owner: D43
+    release: v1
+    gate_trigger: true
+    absence: true
+    requires_context: training_code_present
+    derived: {test: none_found, of: [target_identified, target_definition_stated]}
+    review: block_for_gate                # trips the gate only after a practitioner confirms the absence
+    review_question: "We couldn't trace the target in the shared code, configs or documents. Can the client state what the model forecasts?"
+
+  returns_netted:
+    polarity: neutral
+    owner: D43
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@returns_netting_patterns"}}
+      - {type: sql_pattern, file_family: code, level: Verified, params: {patterns: "@returns_netting_patterns"}}
+    match_strength: pattern
+    review: none
+    values: [file, line, pattern]
+    note: "Detection only; returns_share measures how much it matters."
+
+  returns_handled_explicitly:
+    polarity: positive
+    owner: D43
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@returns_separate_patterns"}}
+    match_strength: pattern
+    review: count_and_flag
+    values: [file, line, method]
+
+  target_clipped_at_zero:
+    polarity: negative
+    owner: D43
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@target_clip_patterns"}}
+    match_strength: pattern
+    review: none
+    values: [call, file, line]
+    note: "Clipping net sales at zero hides returns rather than handling them; periods with heavy returns get inflated."
+
+  cancellations_excluded:
+    polarity: positive
+    owner: D43
+    release: v1
+    detectors:
+      - {type: code_call, file_family: code, level: Verified, params: {patterns: "@cancellation_filter_patterns"}}
+      - {type: sql_pattern, file_family: code, level: Verified, params: {patterns: "@cancellation_filter_patterns"}}
+    match_strength: pattern
+    review: none
+    values: [file, line, statuses_excluded]
+
+  target_type_use_mismatch:
+    polarity: negative
+    owner: D43
+    release: later
+    derived:
+      from: [target_identified, target_definition_stated]
+      test: type_outside_use_fit
+      params: {use_terms: "@forecast_use_terms", fit_table: "@target_use_fit"}
+    review: block_for_gate
+    values: [target_type, forecast_use]
+
+# ---------------------------------------------------------------------------
+# CONTROL: scoring (first matching score wins; every matching cap applies)
+# ---------------------------------------------------------------------------
 scoring:
-  - {when_all: [stockout_handling], score: 60}
+  - {when_all: [target_identified, target_definition_stated, target_same_in_training_and_evaluation], score: 85}
+  - {when_all: [target_identified, target_same_in_training_and_evaluation], score: 75}
+  - {when_all: [target_identified, target_definition_stated], score: 70}
+  - {when_all: [target_identified], score: 65}
+  - {when_all: [target_definition_stated], score: 60}
+  - {when_all: [target_undefined], score: 30}
+  - {when_all: [target_mismatch_training_evaluation], cap: 30}
+  - {when_all: [definitions_conflict], cap: 35}
+  - {when_all: [target_type_use_mismatch], cap: 60}
+  - {when_all: [target_ambiguous], cap: 65}
+  - {when_all: [target_clipped_at_zero], cap: 70}
   - {otherwise: no_evidence}
-checks:
-  - id: stockouts
-    name: Stockouts and lost sales
-    signal: stockout_handling
-    when_found: "A document or transcript mentions stockouts or lost sales. A mention is not confirmation that the correction is applied to the training history. {fact}"
-    when_missing: "No mention of stockouts or lost sales was found. Absence is not proof the correction is missing."
-  - id: returns
-    name: Returns and cancellations
-    text: "Confirm returns and cancellations are removed from demand, or kept for an explicit reason. This check is not inferred from a keyword."
-  - id: flags
-    name: Stockout flags on the history
-    text: "Confirm a stockout flag exists at series and date, and that flagged periods are not treated as zero demand. A flag file was not scored in this pack version."
+scoring_notes:
+  - "Returns and cancellations count on the condition side only (returns_share, cancellation_share); netting itself carries no control cap (penalise once)."
+  - "target_undefined scores 30 but cannot fail the gate until the absence is confirmed; until then the verdict is held at Readiness not confirmed."
+
+# ---------------------------------------------------------------------------
+# Report text
+# ---------------------------------------------------------------------------
+insights:
+  target_identified: "The model is trained on {column} from {source_table}, read as {target_type} ({net_or_gross}); {file}, line {line}."
+  target_mismatch_training_evaluation: "The model learns {training_column} ({training_type}) but its accuracy is measured against {evaluation_column} ({evaluation_type}); {file}, line {line}. Reported accuracy describes a different quantity from the one being forecast."
+  definitions_conflict: "The target is described differently across {sources}: {types_found}."
+  target_ambiguous: "The target column '{column}' isn't defined anywhere shared, so it's unclear what the model forecasts."
+  target_undefined: "No definition of the target was found in the shared code, configs or documents."
+  target_clipped_at_zero: "Net sales are clipped at zero ({call}, {file} line {line}), which hides returns instead of handling them."
+  returns_handled_explicitly: "Returns are kept out of the target and handled separately ({method}; {file}, line {line})."
+
 recommendations:
-  stockout_handling: R-DATA-02
-gap_request: "The demand definition, including how stockouts, returns, and cancellations are treated, plus any stockout flags."
+  target_mismatch_training_evaluation: R-DA-11
+  definitions_conflict: R-DA-10
+  target_ambiguous: R-DA-10
+  target_undefined: R-DA-10
+  target_clipped_at_zero: R-DA-12
+  target_type_use_mismatch: R-DA-15
+
+# ---------------------------------------------------------------------------
+# Targeted request and practitioner review
+# ---------------------------------------------------------------------------
+gap_request:
+  condition: >-
+    The actuals used to measure forecast accuracy (or the forecast archive with actuals) at the same
+    grain as the forecasts; if the target is net of returns, returns separately; for order-based
+    targets, the order status.
+  control: >-
+    The training code or config that sets the target column, the evaluation or backtest code, and
+    the data dictionary or methodology note that defines the target.
+
 review_checklist:
-  - "Has a practitioner confirmed that lost sales are corrected in the training history, not only mentioned in a document?"
-  - "Are returns and cancellations removed before the model sees the series?"
-version_notes: "0.2.0: target definition is reported as stockouts, returns, and flags. A mention still does not score on its own."
+  - "What exactly does the model forecast: till sales, orders, shipments, invoiced quantity, consumption or value?"
+  - "Gross or net of returns? With or without cancelled lines?"
+  - "Is the same quantity used to train the model, to measure its accuracy, and in the planning system?"
+  - "At what grain (period, product level, location level) and in what unit are forecasts used?"
+  - "Has the definition changed during the history, e.g. a switch from shipments to till sales?"
+  - "Note: stockouts and lost sales are out of scope for D43 (decision of 26 Oct 2026). Record any client concern about them as context only."
+
+tests: "README.md, section 6 (planted cases T1-T16)"

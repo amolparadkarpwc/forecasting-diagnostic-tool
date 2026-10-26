@@ -1,37 +1,149 @@
+# Recommendation library: data area (D08 and D43 so far)
+# target = projected score if the fix is done well (used by What-if); realistic, never 100. Placeholders.
+# root_cause is one of: model, data, inputs, process.
+
+version: 0.2.0
 recommendations:
-  - id: R-DATA-01
-    text: "Add a pre-forecast validation check that fails the run when periods are missing or duplicate keys exist."
-    effort: M
+
+  - id: R-DA-01
+    diagnostic: D08
+    title: "Stop filling missing periods with zero"
+    text: >-
+      Record a gap flag for every missing series-period, then either exclude flagged periods from
+      training or impute them with a stated method and keep the flag as a model input. Confirm with
+      the source owner whether an absent row means no sale or missing data, and write that rule down.
+    effort: L
+    targets: {D08: 75}
     root_cause: data
-    targets:
-      D08: 75
-  - id: R-DATA-02
-    text: "Define the demand target, including how stockouts, returns, and cancellations are treated, and keep that rule with the training data."
+
+  - id: R-DA-02
+    diagnostic: D08
+    title: "Validate the data before every run"
+    text: >-
+      Add schema, null, uniqueness and range checks on the sales history and key inputs (for example
+      pandera, Great Expectations or dbt tests) and run them as the first step of each forecast run.
+      A failed check should hold the run or publish with a visible warning.
     effort: M
-    root_cause: data
-    targets:
-      D43: 70
-  - id: R-FE-01
-    text: "Rebuild features with a strict as-of cutoff so no future actuals or realised prices enter the training row."
-    effort: H
-    root_cause: inputs
-    targets:
-      D14: 75
-  - id: R-VAL-01
-    text: "Publish WAPE and bias by horizon on every backtest, computed from the forecast archive and actuals."
-    effort: M
-    root_cause: model
-    targets:
-      D23: 80
-  - id: R-VAL-02
-    text: "Score the model against a seasonal naive baseline on the same origins and keep the comparison in the model selection log."
-    effort: M
-    root_cause: model
-    targets:
-      D34: 75
-  - id: R-DEP-01
-    text: "Replace silent exception handlers with logged failures and an alert when the scheduled forecast run fails."
-    effort: M
+    targets: {D08: 80}
     root_cause: process
-    targets:
-      D41: 75
+
+  - id: R-DA-03
+    diagnostic: D08
+    title: "Stop silent type coercion and skipped lines"
+    text: >-
+      Parse with explicit types. Count, log and write rejected rows and malformed lines to a reject
+      file instead of converting them to zero, dropping them, or skipping them silently.
+    effort: L
+    targets: {D08: 70}
+    root_cause: data
+
+  - id: R-DA-04
+    diagnostic: D08
+    title: "De-duplicate on the business key with a stated rule"
+    text: >-
+      Remove duplicates on series and period, and decide which record wins when values conflict
+      (for example the latest load). Report how many conflicts were resolved in each run.
+    effort: L
+    targets: {D08: 75}
+    root_cause: data
+
+  - id: R-DA-05
+    diagnostic: D08
+    title: "Normalise calendars and units at load"
+    text: >-
+      Convert every table to one period grid (one week anchor) and one unit of measure using
+      master-data conversion factors, before any table is joined or aggregated.
+    effort: M
+    targets: {D08: 75}
+    root_cause: data
+
+  - id: R-DA-06
+    diagnostic: D08
+    title: "Act on validation failures"
+    text: >-
+      When a check fails, hold the run until the data is fixed, or publish with the failure flagged to
+      planners. Never publish silently on data that failed validation.
+    effort: L
+    targets: {D08: 75}
+    root_cause: process
+
+  - id: R-DA-07
+    diagnostic: D08
+    title: "Reconcile sales history with master data"
+    text: >-
+      Check every series in the sales history against master data on each load, and report orphan
+      series so they can be mapped into the hierarchy.
+    effort: L
+    targets: {D08: 70}
+    root_cause: data
+
+  - id: R-DA-08
+    diagnostic: D08
+    title: "Version the data contract"
+    text: >-
+      Keep a versioned schema for each source table, check it on every load, and notify the forecasting
+      team before a change reaches the pipeline.
+    effort: M
+    targets: {D08: 70}
+    root_cause: process
+
+  - id: R-DA-10
+    diagnostic: D43
+    title: "Write one target definition and use it everywhere"
+    text: >-
+      State in one place what the model forecasts: the quantity (till sales, orders, shipments,
+      invoiced or value), gross or net of returns, with or without cancellations, the unit and the
+      grain. Point the training code, the evaluation code and the planning documents at that definition.
+    effort: L
+    targets: {D43: 75}
+    root_cause: process
+
+  - id: R-DA-11
+    diagnostic: D43
+    title: "Measure accuracy against the quantity the model learns"
+    text: >-
+      Compute accuracy and backtests on the same target column, from the same source, as training.
+      Reconcile the actuals in the forecast archive with the training history on every run.
+    effort: L
+    targets: {D43: 80}
+    root_cause: process
+
+  - id: R-DA-12
+    diagnostic: D43
+    title: "Forecast gross demand and handle returns separately"
+    text: >-
+      Train on gross sales and forecast returns as their own series (or apply a returns rate), instead
+      of netting returns into the target or clipping net sales at zero.
+    effort: M
+    targets: {D43: 75}
+    root_cause: data
+
+  - id: R-DA-13
+    diagnostic: D43
+    title: "Exclude cancelled order lines from the target"
+    text: >-
+      Filter cancelled and voided lines out before the target is built, and record how much volume
+      was removed in each run.
+    effort: L
+    targets: {D43: 75}
+    root_cause: data
+
+  - id: R-DA-14
+    diagnostic: D43
+    title: "Align the grain and unit of forecasts and actuals"
+    text: >-
+      Use one period anchor, one product and location level, and one unit for forecasts and actuals,
+      with a stated rule for any split or roll-up between levels.
+    effort: M
+    targets: {D43: 75}
+    root_cause: data
+
+  - id: R-DA-15
+    diagnostic: D43
+    title: "Choose the target that matches the decision"
+    text: >-
+      Forecast the quantity the decision depends on, for example till sales for store replenishment
+      or orders for production planning, and document why.
+    effort: H
+    targets: {D43: 70}
+    root_cause: process
